@@ -1,36 +1,121 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Bank Muamalat Credit Card Application Dashboard
 
-## Getting Started
+AI-powered credit card application processing dashboard with multi-agent system.
 
-First, run the development server:
+## Features
 
+- **AI-Powered Extraction**: Extract customer data from messy text (WhatsApp, email, forms)
+- **Multi-Agent System**: Claude-powered agents for extraction, validation, fraud detection, and enrichment
+- **Smart Form Filling**: Auto-populate fields with extracted data
+- **PDF Generation**: Generate completed credit card applications
+- **Malaysian IC Support**: Parse MyKad numbers and infer DOB
+- **Abbreviation Expansion**: Auto-expand common business abbreviations (MD→Managing Director, etc.)
+
+## Multi-Agent Architecture
+
+This project includes a sophisticated multi-agent system powered by Claude AI:
+
+- **Extraction Agent**: Intelligently parse unstructured text
+- **Validation Agent**: Verify data quality and completeness
+- **Fraud Detection Agent**: Risk scoring and suspicious pattern detection
+- **Enrichment Agent**: Smart field completion and suggestions
+
+See [AGENTS.md](./AGENTS.md) for detailed documentation.
+
+## Quick Start
+
+1. **Install dependencies**
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. **Configure environment**
+```bash
+cp .env.local.example .env.local
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Edit `.env.local` and add your API keys:
+```bash
+# For multi-agent system (recommended)
+ANTHROPIC_API_KEY=sk-ant-your-key-here
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+# Fallback options
+GOOGLE_API_KEY=your-google-api-key
+```
 
-## Learn More
+3. **Run development server**
+```bash
+npm run dev
+```
 
-To learn more about Next.js, take a look at the following resources:
+4. **Open in browser**
+[http://localhost:3000](http://localhost:3000)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## API Endpoints
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Agent-based Extraction (Recommended)
+```http
+POST /api/agents/extract
+Content-Type: application/json
 
-## Deploy on Vercel
+{
+  "raw_text": "Name: Tan Pai Joo\nIC: 730307016344\n..."
+}
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Agent Status
+```http
+GET /api/agents/status
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### PDF Generation
+```http
+POST /api/generate-pdf
+Content-Type: application/json
+
+{
+  "name": "Tan Pai Joo",
+  "ic_number": "730307016344",
+  ...
+}
+```
+
+## Project Structure
+
+```
+├── app/
+│   ├── api/
+│   │   ├── agents/          # Multi-agent endpoints
+│   │   ├── extract/         # Legacy extraction endpoint
+│   │   └── generate-pdf/    # PDF generation
+│   └── page.tsx             # Dashboard UI
+├── lib/
+│   ├── agents/              # Multi-agent system
+│   │   ├── ExtractionAgent.ts
+│   │   ├── ValidationAgent.ts
+│   │   ├── FraudDetectionAgent.ts
+│   │   ├── EnrichmentAgent.ts
+│   │   └── AgentOrchestrator.ts
+│   ├── n8n.ts               # Fallback extraction
+│   ├── pdf.ts               # PDF generation
+│   └── types.ts             # Type definitions
+└── components/               # UI components
+```
+
+## Tech Stack
+
+- **Framework**: Next.js 16 with App Router
+- **UI Components**: shadcn/ui
+- **Styling**: Tailwind CSS
+- **AI**: Claude AI (Anthropic), Google Gemini (fallback)
+- **TypeScript**: Full type safety
+- **PDF**: PDF form filling
+
+## Documentation
+
+- [AGENTS.md](./AGENTS.md) - Multi-agent system documentation
+- [CLAUDE.md](./CLAUDE.md) - Project instructions for Claude
+
+## License
+
+Private project
