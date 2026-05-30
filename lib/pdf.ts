@@ -1,5 +1,7 @@
 import { PDFDocument, PDFForm, PDFTextField, PDFCheckBox } from 'pdf-lib';
 import { ApplicationFormData } from './types';
+import { getTemplateByBank } from './banks';
+import { fillOCBCFormWithFields } from './pdf-ocbc';
 import fs from 'fs';
 import path from 'path';
 
@@ -7,20 +9,45 @@ export async function fillPdfForm(data: ApplicationFormData): Promise<Uint8Array
   console.log('[PDF] Starting generation with data keys:', Object.keys(data));
   console.log('[PDF] mykad_number:', data.mykad_number);
   console.log('[PDF] employer_name:', data.employer_name);
+  console.log('[PDF] bank_id:', data.bank_id);
 
-  const templatePath = path.join(process.cwd(), 'public/templates/credit-card-application.pdf');
+  // Get template based on bank selection
+  const templateName = data.bank_id ? getTemplateByBank(data.bank_id) : 'muamalat application form.pdf';
+  const templatePath = path.join(process.cwd(), 'public/templates', templateName);
+  console.log('[PDF] Looking for template:', templateName);
 
   if (!fs.existsSync(templatePath)) {
-    console.error('[PDF] Template not found at:', templatePath);
-    throw new Error(`PDF template not found at ${templatePath}`);
+    console.error('[PDF] Template not found:', templatePath);
+    throw new Error(`PDF template not found: ${templateName}`);
   }
 
   const pdfBytes = fs.readFileSync(templatePath);
   console.log('[PDF] Template loaded, size:', pdfBytes.length);
 
+  // Route to appropriate bank form filler
+  if (data.bank_id === 'ocbc') {
+    return await fillOCBCFormWithFields(pdfBytes, data);
+  }
+
+  // Default to Bank Muamalat
+  return await fillBankMuamalatForm(pdfBytes, data);
+}
+
+// OCBC form filling
+async function fillOCBCForm(pdfBytes: Buffer, data: ApplicationFormData): Promise<Uint8Array> {
+  console.log('[PDF] OCBC form detected - returning blank form for manual filling');
+  console.log('[PDF] OCBC PDF has no fillable fields - user will need to fill manually');
+
+  // OCBC PDF is static (no form fields), so return it as-is
+  // User will need to fill it manually using the extracted data
+  return new Uint8Array(pdfBytes);
+}
+
+// Bank Muamalat form filling
+async function fillBankMuamalatForm(pdfBytes: Buffer, data: ApplicationFormData): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.load(pdfBytes);
   const form = pdfDoc.getForm();
-  console.log('[PDF] Form loaded');
+  console.log('[PDF] Bank Muamalat form loaded');
 
   // Helper functions
   const setText = (fieldName: string, value: string | null | undefined) => {
@@ -59,7 +86,6 @@ export async function fillPdfForm(data: ApplicationFormData): Promise<Uint8Array
   };
 
   // ==================== CARD TYPE ====================
-  // Uncheck all card types first
   uncheckField('Visa Platinum-i Checkbutton');
   uncheckField('Visa Infinitei Checkbutton');
   uncheckField('Muamalat Pos Visa Platinum-i Checkbutton');
@@ -74,14 +100,12 @@ export async function fillPdfForm(data: ApplicationFormData): Promise<Uint8Array
     } else if (data.card_type === 'Visa Infinite-i') {
       setCheck('Visa Infinitei Checkbutton', true);
     }
-    // Add more card type mappings as needed
   }
 
   // ==================== A. PERSONAL DETAILS ====================
   setText('Salutation', data.salutation);
   setText('Name', data.name_as_per_ic);
 
-  // Gender
   uncheckField('Male Checkbutton');
   uncheckField('Female Checkbutton');
   if (data.gender === 'Male') {
@@ -90,7 +114,6 @@ export async function fillPdfForm(data: ApplicationFormData): Promise<Uint8Array
     setCheck('Female Checkbutton', true);
   }
 
-  // Nationality
   uncheckField('Nationality - Malaysia');
   uncheckField('Nationality - Others');
   if (data.nationality?.toLowerCase() === 'malaysian') {
@@ -109,17 +132,14 @@ export async function fillPdfForm(data: ApplicationFormData): Promise<Uint8Array
   setText('HP', data.hp_number);
   setText('email', data.email_address);
 
-  // Name on Card - smart truncate to 19 characters
   const nameOnCard = truncateNameForCard(data.name_on_card || data.name_as_per_ic || '');
   setText('Name on Card', nameOnCard);
 
-  // Address
   const address = data.residential_address || '';
   const addressLines = splitAddress(address, 2);
   setText('Residential Address 1', addressLines[0]);
   setText('Residential Address 2', addressLines[1]);
 
-  // Parse postcode, city, state from address
   const { postcode, city, state } = parseMalaysianAddress(address);
   setText('Postcode', postcode || data.postcode);
   setText('City', city || data.city);
@@ -127,7 +147,6 @@ export async function fillPdfForm(data: ApplicationFormData): Promise<Uint8Array
 
   setText('Education Level', data.education_level);
 
-  // BMMB Staff (default No)
   uncheckField('BMMB Staff Yes');
   uncheckField('BMMB Staff No');
   if (data.related_to_bmm_staff) {
@@ -147,13 +166,11 @@ export async function fillPdfForm(data: ApplicationFormData): Promise<Uint8Array
   setText('Length of Service', data.length_of_service);
   setText('Employment Sector', data.employment_sector);
 
-  // Office Address
   const officeAddress = data.office_address || '';
   const officeAddressLines = splitAddress(officeAddress, 2);
   setText('Office Address  1', officeAddressLines[0]);
   setText('Office Address  2', officeAddressLines[1]);
 
-  // Parse office postcode, city, state
   const officeParsed = parseMalaysianAddress(officeAddress);
   setText('Office Postcode', officeParsed.postcode);
   setText('Office City', officeParsed.city);
@@ -180,14 +197,12 @@ export async function fillPdfForm(data: ApplicationFormData): Promise<Uint8Array
   uncheckField('Yes Other Country Tax');
   uncheckField('No Other Country Tax');
 
-  // fatca_decl_1 = true means "No" is checked
   if (data.fatca_decl_1) {
     setCheck('No US Citizen', true);
   } else {
     setCheck('Yes US Citizen', true);
   }
 
-  // fatca_decl_2 = true means "No" is checked
   if (data.fatca_decl_2) {
     setCheck('No Other Country Tax', true);
   } else {
@@ -214,7 +229,6 @@ export async function fillPdfForm(data: ApplicationFormData): Promise<Uint8Array
   setText('Main Name', data.name_as_per_ic);
   setText('Main Date', today);
 
-  // Save the PDF
   const filledPdfBytes = await pdfDoc.save();
   return new Uint8Array(filledPdfBytes);
 }
@@ -242,7 +256,6 @@ function splitAddress(address: string, maxLines: number): string[] {
     lines.push(currentLine);
   }
 
-  // Pad with empty strings
   while (lines.length < maxLines) {
     lines.push('');
   }
@@ -269,7 +282,6 @@ function parseMalaysianAddress(address: string): { postcode?: string; city?: str
     }
   }
 
-  // Extract city (word after postcode, before state)
   let city: string | undefined;
   if (postcodeMatch && state) {
     const afterPostcode = address.substring(postcodeMatch.index! + postcodeMatch[0].length);
@@ -281,49 +293,34 @@ function parseMalaysianAddress(address: string): { postcode?: string; city?: str
 }
 
 // Helper: Truncate name for card (max 19 characters)
-// Smart truncation: tries to keep First Name + Last Name, always removes "Binti"/"Bin"
 function truncateNameForCard(fullName: string): string {
   if (!fullName) return '';
 
   const MAX_CHARS = 19;
-
-  // Remove extra spaces and trim
   const cleanName = fullName.replace(/\s+/g, ' ').trim().toUpperCase();
-
-  // For Malay names: extract First Name + Last Name (skipping "BINTI"/"BIN")
   const parts = cleanName.split(' ');
   const firstName = parts[0];
 
-  // Find last name (part after "BINTI" or "BIN")
-  let lastName = '';
-  let foundConnector = false;
   let partsWithoutConnector: string[] = [];
-
   for (let i = 0; i < parts.length; i++) {
     if (parts[i] === 'BINTI' || parts[i] === 'BIN') {
-      foundConnector = true;
-      // Skip this connector, but continue to get the next part as last name
       continue;
     }
     partsWithoutConnector.push(parts[i]);
   }
 
-  // Build name without connector
   let cardName = partsWithoutConnector.join(' ');
 
-  // If still too long, try First Name + Last Word only
   if (cardName.length > MAX_CHARS && partsWithoutConnector.length > 1) {
     const lastWord = partsWithoutConnector[partsWithoutConnector.length - 1];
     const shortName = `${firstName} ${lastWord}`;
     if (shortName.length <= MAX_CHARS) {
       cardName = shortName;
     } else {
-      // Still too long? Just use first name
       cardName = firstName;
     }
   }
 
-  // First name too long? Truncate
   if (cardName.length > MAX_CHARS) {
     cardName = firstName.substring(0, MAX_CHARS);
   }

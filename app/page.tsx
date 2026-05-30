@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import type { ExtractedData, ApplicationFormData } from '@/lib/types';
 import { dropdownOptions } from '@/lib/types';
+import { BANKS, getCardsByBank } from '@/lib/banks';
 
 // Helper: Generate name for card (max 19 characters, smart truncate)
 // Always removes "BINTI"/"BIN" connectors for cleaner card names
@@ -59,7 +60,10 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [extractedData, setExtractedData] = useState<ExtractedData | null>(null);
+  const [selectedBank, setSelectedBank] = useState<string>('bank_muamalat');
+  const [availableCards, setAvailableCards] = useState<readonly string[]>(getCardsByBank('bank_muamalat'));
   const [formData, setFormData] = useState<ApplicationFormData>({
+    bank_id: 'bank_muamalat',
     nationality: 'Malaysian',
     related_to_bmm_staff: false,
     agree_tawarruq: true,
@@ -69,6 +73,13 @@ export default function Dashboard() {
     tax_fatca_decl: true,
     agree_declaration: true,
   });
+
+  // Handle bank change - update available cards and reset card_type
+  const handleBankChange = (bankId: string) => {
+    setSelectedBank(bankId);
+    setAvailableCards(getCardsByBank(bankId));
+    setFormData(prev => ({ ...prev, bank_id: bankId as any, card_type: null }));
+  };
 
   const handleExtract = async () => {
     if (!rawText.trim()) return;
@@ -360,7 +371,13 @@ Hp number : 0173896769
             </CardHeader>
             <CardContent className="max-h-[700px] overflow-y-auto">
               {extractedData ? (
-                <FormFields formData={formData} updateField={updateField} />
+                <FormFields
+                  formData={formData}
+                  updateField={updateField}
+                  selectedBank={selectedBank}
+                  availableCards={availableCards}
+                  onBankChange={handleBankChange}
+                />
               ) : (
                 <div className="text-center py-16 text-slate-500">
                   <p>Paste customer data and click &quot;Extract Information&quot; to begin</p>
@@ -372,18 +389,31 @@ Hp number : 0173896769
 
         {/* Generate PDF Button */}
         {extractedData && (
-          <Card className="mt-6 shadow-lg border-green-200 dark:border-green-800">
-            <CardContent className="pt-6">
-              <Button
-                onClick={handleGeneratePDF}
-                disabled={isGenerating}
-                size="lg"
-                className="w-full bg-green-600 hover:bg-green-700"
-              >
-                {isGenerating ? 'Generating PDF...' : 'Generate PDF Application'}
-              </Button>
-            </CardContent>
-          </Card>
+          <>
+            {/* Info message for OCBC */}
+            {formData.bank_id === 'ocbc' && (
+              <Card className="mt-6 shadow-lg border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950">
+                <CardContent className="pt-6">
+                  <p className="text-sm text-green-800 dark:text-green-200">
+                    ✅ <strong>OCBC Form:</strong> Auto-fill enabled using fillable form fields.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+
+            <Card className="mt-6 shadow-lg border-green-200 dark:border-green-800">
+              <CardContent className="pt-6">
+                <Button
+                  onClick={handleGeneratePDF}
+                  disabled={isGenerating}
+                  size="lg"
+                  className="w-full bg-green-600 hover:bg-green-700"
+                >
+                  {isGenerating ? 'Generating PDF...' : 'Generate PDF Application'}
+                </Button>
+              </CardContent>
+            </Card>
+          </>
         )}
       </div>
     </div>
@@ -393,12 +423,36 @@ Hp number : 0173896769
 function FormFields({
   formData,
   updateField,
+  selectedBank,
+  availableCards,
+  onBankChange,
 }: {
   formData: ApplicationFormData;
   updateField: (field: keyof ApplicationFormData, value: string | boolean) => void;
+  selectedBank: string;
+  availableCards: readonly string[];
+  onBankChange: (bankId: string) => void;
 }) {
   return (
     <div className="space-y-6 pr-2">
+      {/* Bank Selection */}
+      <div className="space-y-3">
+        <h3 className="font-semibold text-sm text-blue-700 dark:text-blue-400">Bank</h3>
+        <Select
+          value={formData.bank_id || ''}
+          onValueChange={(v) => v != null && (updateField('bank_id', v), onBankChange(v))}
+        >
+          <SelectTrigger id="bank_id">
+            <SelectValue placeholder="Select bank" />
+          </SelectTrigger>
+          <SelectContent>
+            {Object.entries(BANKS).map(([id, bank]) => (
+              <SelectItem key={id} value={id}>{bank.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
       {/* Card Type */}
       <div className="space-y-3">
         <h3 className="font-semibold text-sm text-blue-700 dark:text-blue-400">Card Type</h3>
@@ -410,7 +464,7 @@ function FormFields({
             <SelectValue placeholder="Select card type" />
           </SelectTrigger>
           <SelectContent>
-            {dropdownOptions.cardType.map((type) => (
+            {availableCards.map((type) => (
               <SelectItem key={type} value={type}>{type}</SelectItem>
             ))}
           </SelectContent>

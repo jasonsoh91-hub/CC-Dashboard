@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { BANKS, BankId } from './banks';
 
 // Malaysian race options
 const races = ['Malay', 'Chinese', 'Indian', 'Others'] as const;
@@ -49,8 +50,21 @@ const positions = [
   'Others'
 ] as const;
 
-// Card types
-const cardTypes = ['Visa Classic', 'Visa Gold', 'Visa Platinum-i', 'Visa Infinite-i', 'Mastercard Classic', 'Mastercard Gold'] as const;
+// Card types (now bank-specific - see lib/banks.ts)
+// All available cards across all banks
+const allCardTypes = [
+  'Visa Platinum-i',
+  'Visa Infinite-i',
+  '90°N Visa Card',
+  'Cashflo Mastercard',
+  'Titanium Card (Blue)',
+  'Titanium Card (Pink)',
+  '365 Mastercard',
+  'Great Eastern Platinum Mastercard',
+] as const;
+
+// Bank options
+const bankIds = Object.keys(BANKS) as BankId[];
 
 // Schema for extracted credit card application data
 export const ExtractedDataSchema = z.object({
@@ -74,8 +88,9 @@ export const ExtractedDataSchema = z.object({
 
 // Full application form data
 export const ApplicationFormDataSchema = ExtractedDataSchema.extend({
-  // Card Type
-  card_type: z.enum(cardTypes).optional().nullable(),
+  // Bank and Card Selection
+  bank_id: z.enum(bankIds).optional().nullable(),
+  card_type: z.enum(allCardTypes).optional().nullable(),
 
   // Section A: Personal Details
   salutation: z.enum(['Dr', 'Haji', 'Hajjah', 'Mr', 'Mrs', 'Ms', 'Prof']).optional().nullable(),
@@ -142,6 +157,7 @@ export type N8nResponse = z.infer<typeof N8nResponseSchema>;
 
 // Dropdown options export
 export const dropdownOptions = {
+  bank: bankIds as readonly string[],
   race: races as readonly string[],
   religion: religions as readonly string[],
   maritalStatus: maritalStatuses as readonly string[],
@@ -153,5 +169,5 @@ export const dropdownOptions = {
   employmentSector: employmentSectors as readonly string[],
   occupation: occupations as readonly string[],
   position: positions as readonly string[],
-  cardType: cardTypes as readonly string[],
+  cardType: allCardTypes as readonly string[],
 };
