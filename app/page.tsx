@@ -331,7 +331,11 @@ export default function Dashboard() {
 
       // Auto-expand abbreviations for occupation and position
       if ((field === 'occupation' || field === 'position') && typeof value === 'string') {
-        updated[field] = expandAbbreviations(value);
+        if (field === 'occupation') {
+          updated.occupation = expandAbbreviations(value);
+        } else if (field === 'position') {
+          updated.position = expandAbbreviations(value);
+        }
       }
 
       // Auto-detect nationality from Malaysian IC + Malaysian address
