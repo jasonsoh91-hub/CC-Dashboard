@@ -93,6 +93,19 @@ export class GLMValidationAgent extends GLMAgent {
       }
     }
 
+    // Check for Malaysian working in Singapore - requires HR email
+    const isMalaysian = data.nationality === 'Malaysian' || this.isMalaysianAddress(data.address);
+    const isSingaporeEmployer = this.isSingaporeAddress(data.employer_address);
+
+    if (isMalaysian && isSingaporeEmployer) {
+      if (!data.work_email) {
+        missingFields.push('HR Email (required for Malaysian working in Singapore)');
+        warnings.push('⚠️ Malaysian working in Singapore - HR Email is REQUIRED');
+      } else {
+        warnings.push('✅ Malaysian working in Singapore - HR Email provided: ' + data.work_email);
+      }
+    }
+
     return {
       isValid: missingFields.length === 0 && Object.keys(invalidFields).length === 0,
       missingFields,
@@ -100,5 +113,51 @@ export class GLMValidationAgent extends GLMAgent {
       warnings,
       suggestions,
     };
+  }
+
+  private isMalaysianAddress(address: string | null | undefined): boolean {
+    if (!address) return false;
+
+    const lowerAddress = address.toLowerCase();
+    const malaysianStates = [
+      'johor', 'kedah', 'kelantan', 'melaka', 'negeri sembilan',
+      'pahang', 'perak', 'perlis', 'pulau pinang', 'penang',
+      'sabah', 'sarawak', 'selangor', 'terengganu',
+      'kuala lumpur', 'labuan', 'putrajaya'
+    ];
+
+    // Check for Malaysian states
+    for (const state of malaysianStates) {
+      if (lowerAddress.includes(state)) {
+        return true;
+      }
+    }
+
+    // Check for Malaysian postcode (5 digits)
+    const malaysianPostcode = /\b\d{5}\b/;
+    if (malaysianPostcode.test(address)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  private isSingaporeAddress(address: string | null | undefined): boolean {
+    if (!address) return false;
+
+    const lowerAddress = address.toLowerCase();
+
+    // Check for Singapore
+    if (lowerAddress.includes('singapore') || lowerAddress.includes('s singapore')) {
+      return true;
+    }
+
+    // Check for Singapore postcode (6 digits)
+    const singaporePostcode = /\b\d{6}\b/;
+    if (singaporePostcode.test(address)) {
+      return true;
+    }
+
+    return false;
   }
 }

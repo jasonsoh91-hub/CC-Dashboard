@@ -8,6 +8,8 @@ export async function POST(request: NextRequest) {
     console.log('[PDF API] Received body keys:', Object.keys(body));
     console.log('[PDF API] mykad_number:', body.mykad_number);
     console.log('[PDF API] employer_name:', body.employer_name);
+    console.log('[PDF API] bank_id:', body.bank_id);
+    console.log('[PDF API] agree_tawarruq:', body.agree_tawarruq);
 
     // Validate the incoming data
     const validatedData = ApplicationFormDataSchema.parse(body);
@@ -23,20 +25,24 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('[PDF API] Error:', error);
-    console.error('[PDF API] Error details:', error instanceof Error ? error.message : error);
+    console.error('[PDF API] Error occurred');
+    console.error('[PDF API] Error type:', error?.constructor?.name);
+    console.error('[PDF API] Error message:', error instanceof Error ? error.message : 'No message');
+    console.error('[PDF API] Error stack:', error instanceof Error ? error.stack : 'No stack');
+    console.error('[PDF API] Full error object:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+
+    const errorResponse: any = { error: 'Failed to generate PDF' };
 
     if (error instanceof Error) {
-      return NextResponse.json(
-        { error: 'Failed to generate PDF', details: error.message },
-        { status: 500 }
-      );
+      errorResponse.details = error.message;
+      errorResponse.name = error.name;
+    } else {
+      errorResponse.details = String(error);
     }
 
-    return NextResponse.json(
-      { error: 'Failed to generate PDF' },
-      { status: 500 }
-    );
+    console.log('[PDF API] Sending error response:', JSON.stringify(errorResponse));
+
+    return NextResponse.json(errorResponse, { status: 500 });
   }
 }
 

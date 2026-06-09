@@ -116,8 +116,8 @@ export class GLMClient {
 
 // Available GLM models
 export const GLMModels = {
-  FLASH: 'glm-4-flash',      // Fast, cost-effective
+  FLASH: 'glm-4-plus',       // Fast, cost-effective (mapped to working model)
   PLUS: 'glm-4-plus',         // Balanced performance
-  AIR: 'glm-4-air',          // Lightweight
-  STD: 'glm-4',              // Standard
+  AIR: 'glm-4-plus',         // Lightweight (mapped to working model)
+  STD: 'glm-4-plus',         // Standard (mapped to working model)
 } as const;

@@ -55,6 +55,26 @@ function generateNameOnCard(fullName: string | undefined | null): string {
   return cardName;
 }
 
+// Helper: Check if address is in Singapore
+function isSingaporeAddress(address: string | null | undefined): boolean {
+  if (!address) return false;
+
+  const lowerAddress = address.toLowerCase();
+
+  // Check for Singapore
+  if (lowerAddress.includes('singapore') || lowerAddress.includes('s singapore')) {
+    return true;
+  }
+
+  // Check for Singapore postcode (6 digits)
+  const singaporePostcode = /\b\d{6}\b/;
+  if (singaporePostcode.test(address)) {
+    return true;
+  }
+
+  return false;
+}
+
 export default function Dashboard() {
   const [rawText, setRawText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -64,7 +84,7 @@ export default function Dashboard() {
   const [availableCards, setAvailableCards] = useState<readonly string[]>(getCardsByBank('bank_muamalat'));
   const [formData, setFormData] = useState<ApplicationFormData>({
     bank_id: 'bank_muamalat',
-    nationality: 'Malaysian',
+    nationality: '',
     related_to_bmm_staff: false,
     agree_tawarruq: true,
     agree_unspecified: true,
@@ -87,7 +107,7 @@ export default function Dashboard() {
     setIsLoading(true);
     console.log('🔍 Starting extraction...');
     try {
-      const response = await fetch('/api/extract', {
+      const response = await fetch('/api/agents/extract', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ raw_text: rawText }),
@@ -123,7 +143,9 @@ export default function Dashboard() {
           emergency_full_name: result.data.emergency_name,
           emergency_contact_number: result.data.emergency_phone,
           emergency_relation: result.data.emergency_relation,
-          nationality: 'Malaysian',
+          nationality: result.data.nationality || 'Malaysian',
+          education_level: result.data.education_level,
+          hr_email: result.data.work_email,
           related_to_bmm_staff: false,
           agree_tawarruq: true,
           agree_unspecified: true,
@@ -149,9 +171,67 @@ export default function Dashboard() {
           mappedData.date_of_birth = `${day}/${month}/${fullYear}`;
         }
 
+        // Auto-detect gender from MyKad number (last digit: odd=male, even=female)
+        // This overrides salutation-based gender if IC is provided
+        if (result.data.ic_number && result.data.ic_number.length === 12) {
+          const cleanIc = result.data.ic_number.replace(/[^0-9]/g, '');
+          const lastDigit = parseInt(cleanIc.charAt(11));
+          mappedData.gender = (lastDigit % 2 === 1) ? 'Male' : 'Female';
+          console.log('[Extraction] MyKad Gender - IC:', cleanIc, 'Last digit:', lastDigit, 'Gender:', mappedData.gender);
+        }
+
+        // Auto-detect race from name
+        if (result.data.name) {
+          const detectedRace = detectRaceFromName(result.data.name);
+          if (detectedRace) {
+            mappedData.race = detectedRace;
+            console.log('[Extraction] Race Detection - Name:', result.data.name, 'Race:', detectedRace);
+            // Auto-set religion for Malay
+            if (detectedRace === 'Malay') {
+              mappedData.religion = 'Islam';
+              console.log('[Extraction] Race→Religion: Malay detected, set religion to Islam');
+            }
+          }
+        }
+
+        // Auto-detect marital status from emergency relation
+        if (result.data.emergency_relation) {
+          const lowerRelation = result.data.emergency_relation.toLowerCase();
+          if (lowerRelation.includes('spouse') || lowerRelation.includes('husband') || lowerRelation.includes('wife')) {
+            mappedData.marital_status = 'Married';
+            console.log('[Extraction] Emergency Relation:', result.data.emergency_relation, '→ Marital Status: Married');
+          }
+        }
+
+        // Auto-detect nationality from Malaysian IC + Malaysian address
+        const hasMalaysianIC = result.data.ic_number && result.data.ic_number.replace(/[^0-9]/g, '').length === 12;
+        const isMalaysianAddress = mappedData.residential_address && isMalaysianAddressCheck(mappedData.residential_address);
+
+        if (hasMalaysianIC && isMalaysianAddress) {
+          mappedData.nationality = 'Malaysian';
+          console.log('[Extraction] Malaysian IC + Malaysian Address → Nationality: Malaysian');
+        }
+
+        // Auto-parse addresses after extraction
+        if (mappedData.residential_address) {
+          const parsed = parseMalaysianAddress(mappedData.residential_address);
+          console.log('[Extraction] Parsed residential address:', parsed);
+          mappedData.postcode = parsed.postcode;
+          mappedData.city = parsed.city;
+          mappedData.state = parsed.state;
+        }
+        if (mappedData.office_address) {
+          const parsed = parseMalaysianAddress(mappedData.office_address);
+          console.log('[Extraction] Parsed office address:', parsed);
+          mappedData.office_postcode = parsed.postcode;
+          mappedData.office_city = parsed.city;
+          mappedData.office_state = parsed.state;
+        }
+
         setFormData(mappedData);
         console.log('📝 Form data updated:', mappedData);
         console.log('🏢 Mapped employer_name:', mappedData.employer_name);
+        console.log('🏢 Mapped hr_email:', mappedData.hr_email);
         console.log('🏢 Mapped position:', mappedData.position);
         console.log('🏢 Mapped office_phone:', mappedData.office_number);
       }
@@ -170,7 +250,13 @@ export default function Dashboard() {
     const cleanData = Object.fromEntries(
       Object.entries(formData).filter(([_, v]) => v !== undefined && v !== null)
     );
-    console.log('[PDF] Cleaned data:', cleanData);
+    console.log('[PDF] Cleaned data keys:', Object.keys(cleanData));
+    console.log('[PDF] Cleaned data sample:', {
+      bank_id: cleanData.bank_id,
+      mykad_number: cleanData.mykad_number,
+      employer_name: cleanData.employer_name,
+      agree_tawarruq: cleanData.agree_tawarruq,
+    });
 
     try {
       const response = await fetch('/api/generate-pdf', {
@@ -190,9 +276,16 @@ export default function Dashboard() {
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
       } else {
-        const errorData = await response.json();
-        console.error('[PDF] Server error:', errorData);
-        alert(`PDF generation failed: ${errorData.error || 'Unknown error'}`);
+        const errorText = await response.text();
+        console.error('[PDF] Server error response:', errorText);
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch (e) {
+          errorData = { rawResponse: errorText };
+        }
+        console.error('[PDF] Server error parsed:', errorData);
+        alert(`PDF generation failed: ${errorData?.error || errorData?.details || 'Unknown error'}\n\nCheck console for details.`);
       }
     } catch (error) {
       console.error('PDF generation error:', error);
@@ -201,12 +294,30 @@ export default function Dashboard() {
     }
   };
 
-  const updateField = (field: keyof ApplicationFormData, value: string | boolean | null) => {
+  // Check if address is Malaysian (contains Malaysian state)
+  function isMalaysianAddressCheck(address: string): boolean {
+    const states = [
+      'Johor', 'Kedah', 'Kelantan', 'Melaka', 'Negeri Sembilan', 'Pahang',
+      'Pulau Pinang', 'Perak', 'Perlis', 'Sabah', 'Sarawak', 'Selangor', 'Terengganu',
+      'Kuala Lumpur', 'Labuan', 'Putrajaya'
+    ];
+    const upperAddress = address.toUpperCase();
+    return states.some(state => upperAddress.includes(state.toUpperCase()));
+  }
+
+  const updateField = (field: any, value: any) => {
     // Skip null values (can happen with Select components)
     if (value === null) return;
 
+    // Debug logging for boolean fields (checkboxes)
+    if (typeof value === 'boolean') {
+      console.log(`[updateField] ${field} = ${value}, type: ${typeof value}`);
+    }
+
     setFormData(prev => {
+      console.log(`[updateField] prev.${field} =`, prev[field], `new value:`, value);
       const updated = { ...prev, [field]: value };
+      console.log(`[updateField] updated.${field} =`, updated[field]);
 
       // Auto-link salutation to gender
       if (field === 'salutation' && typeof value === 'string') {
@@ -224,9 +335,144 @@ export default function Dashboard() {
         updated[field] = expandAbbreviations(value);
       }
 
+      // Auto-detect nationality from Malaysian IC + Malaysian address
+      // Check if we have both Malaysian IC and Malaysian address
+      const hasMalaysianIC = (updated.mykad_number || prev.mykad_number) && (updated.mykad_number || prev.mykad_number)!.replace(/[^0-9]/g, '').length === 12;
+      const address = updated.residential_address || prev.residential_address;
+      const isMalaysianAddress = address && isMalaysianAddressCheck(address);
+
+      if (hasMalaysianIC && isMalaysianAddress) {
+        updated.nationality = 'Malaysian';
+        console.log('[Nationality] Malaysian IC + Malaysian Address detected → Nationality: Malaysian');
+      }
+
       return updated;
     });
   };
+
+  // Parse Malaysian or Singapore address to extract postcode, city, and state
+  function parseMalaysianAddress(address: string): { postcode?: string; city?: string; state?: string } {
+    if (!address) return {};
+
+    const lowerAddress = address.toLowerCase();
+
+    // Check for Singapore address (6-digit postcode or "Singapore" in address)
+    const singaporePostcodeMatch = address.match(/\b(\d{6})\b/);
+    const hasSingaporeKeyword = lowerAddress.includes('singapore');
+
+    if (singaporePostcodeMatch || hasSingaporeKeyword) {
+      // Singapore address parsing
+      const postcode = singaporePostcodeMatch ? singaporePostcodeMatch[1] : undefined;
+
+      // Extract city (area name) from Singapore address
+      // Format: "60 Pioneer Rd, Singapore 628509" -> city = "Pioneer"
+      let city: string | undefined;
+      if (postcode) {
+        const parts = address.split(postcode)[0].trim();
+        // Remove "Singapore" and common suffixes, then extract area name
+        const cleaned = parts.replace(/,\s*singapore\s*$/i, '').replace(/,\s*$/i, '');
+        // Extract area name (typically the word before Rd/Road/Street/etc)
+        const areaMatch = cleaned.match(/(\w+)\s+(?:Rd|Road|St|Street|Dr|Drive|Ave|Avenue|Crescent|Close|Walk|Lane)$/i);
+        if (areaMatch) {
+          city = areaMatch[1];
+        } else if (cleaned) {
+          // Fallback: use the last word of the cleaned address
+          const words = cleaned.split(/\s+/);
+          city = words[words.length - 1];
+        }
+      }
+
+      return { postcode, city, state: 'Singapore' };
+    }
+
+    // Malaysian address parsing (5-digit postcode)
+    const postcodeMatch = address.match(/\b(\d{5})\b/);
+    const postcode = postcodeMatch ? postcodeMatch[1] : undefined;
+
+    // Malaysian states list
+    const states = [
+      'Johor', 'Kedah', 'Kelantan', 'Melaka', 'Negeri Sembilan', 'Pahang',
+      'Pulau Pinang', 'Perak', 'Perlis', 'Sabah', 'Sarawak', 'Selangor', 'Terengganu',
+      'Kuala Lumpur', 'Labuan', 'Putrajaya'
+    ];
+
+    // Find state in address
+    let state: string | undefined;
+    let stateIndex = -1;
+    for (const s of states) {
+      const idx = address.toLowerCase().indexOf(s.toLowerCase());
+      if (idx !== -1) {
+        state = s;
+        stateIndex = idx;
+        break;
+      }
+    }
+
+    // Extract city (text between postcode and state)
+    let city: string | undefined;
+    if (postcodeMatch && stateIndex !== -1) {
+      const afterPostcode = address.substring(postcodeMatch.index! + postcodeMatch[0].length);
+      const beforeState = afterPostcode.substring(0, afterPostcode.toLowerCase().indexOf(state!.toLowerCase()));
+      city = beforeState.trim().replace(/^\s+/, '').replace(/\s+$/, '');
+    }
+
+    return { postcode, city, state };
+  }
+
+  // Detect race from Malaysian name patterns
+  function detectRaceFromName(name: string): 'Malay' | 'Chinese' | 'Indian' | 'Others' | null {
+    if (!name) return null;
+
+    const upperName = name.toUpperCase();
+
+    // Check for Malay names (contain "BIN" or "BINTI")
+    if (/\bBIN\b|\bBINTI\b/.test(upperName)) {
+      return 'Malay';
+    }
+
+    // Common Chinese surnames (first word typically)
+    const chineseSurnames = [
+      'LEE', 'TAN', 'LIM', 'NG', 'WONG', 'GOH', 'ONG', 'CHIN', 'CHEW', 'KOAY',
+      'TEH', 'CHONG', 'CHAN', 'TAY', 'YEO', 'YAP', 'LOW', 'TOH', 'SIM', 'KOH',
+      'HAU', 'PANG', 'CHAI', 'THONG', 'KOK', 'LIEW', 'HOON', 'KUAN',
+      'PHUA', 'CHIA', 'SEE', 'MAH', 'CHOO', 'WU', 'TSENG', 'PEH', 'TOE',
+      'FONG', 'POH', 'DING', 'MOK', 'SIANG', 'HENG', 'LEONG', 'LAM', 'LUM',
+      'LAI', 'TIO', 'TUAN', 'NIU', 'YUEN', 'SIA', 'SOH', 'TENG', 'SIU',
+      'WEI', 'HEN', 'LIN', 'WANG', 'ZHANG', 'LIU', 'CHEN', 'YANG', 'HUANG',
+      'ZHAO', 'WU', 'ZHOU', 'XU', 'SUN', 'ZHU', 'MA', 'GAO', 'HE', 'CAI'
+    ];
+
+    const firstWord = upperName.split(/\s+/)[0];
+    if (chineseSurnames.includes(firstWord)) {
+      return 'Chinese';
+    }
+
+    // Check for Indian names (contain "A/P", "S/O", "D/O" or common Indian surnames)
+    if (/\bA\/P\b|\bS\/O\b|\bD\/O\b/.test(upperName)) {
+      return 'Indian';
+    }
+
+    // Common Indian surnames
+    const indianSurnames = [
+      'A/L', 'ANAK', 'MUTHU', 'KUMAR', 'RAJ', 'SINGAM', 'NADAR',
+      'PILLAY', 'NAIDU', 'REDDY', 'MENON', 'IYER', 'LYER', 'SHARMA',
+      'GUPTA', 'AGRAWAL', 'JAIN', 'SINGH', 'KAUR', 'PATHMANATHAN',
+      'SIVANESAN', 'SIVAPPAN', 'SUBRAMANIAM', 'RAMAN', 'KRISHNAN',
+      'VIGNESWARAN', 'THESIGAN', 'MURUGAN', 'KALIAMMAH', 'LETCHUMI',
+      'GANDHI', 'KUMARI', 'DEVI', 'LAL', 'VERMA'
+    ];
+
+    // Check each word in the name
+    const nameWords = upperName.split(/\s+/);
+    for (const word of nameWords) {
+      if (indianSurnames.includes(word)) {
+        return 'Indian';
+      }
+    }
+
+    // If no pattern matches, return null (don't override existing value)
+    return null;
+  }
 
   // Abbreviation expansion (same as in n8n.ts)
   function expandAbbreviations(text: string): string {
@@ -426,13 +672,7 @@ function FormFields({
   selectedBank,
   availableCards,
   onBankChange,
-}: {
-  formData: ApplicationFormData;
-  updateField: (field: keyof ApplicationFormData, value: string | boolean) => void;
-  selectedBank: string;
-  availableCards: readonly string[];
-  onBankChange: (bankId: string) => void;
-}) {
+}: any) {
   return (
     <div className="space-y-6 pr-2">
       {/* Bank Selection */}
@@ -443,7 +683,7 @@ function FormFields({
           onValueChange={(v) => v != null && (updateField('bank_id', v), onBankChange(v))}
         >
           <SelectTrigger id="bank_id">
-            <SelectValue placeholder="Select bank" />
+            <SelectValue placeholder="" />
           </SelectTrigger>
           <SelectContent>
             {Object.entries(BANKS).map(([id, bank]) => (
@@ -461,7 +701,7 @@ function FormFields({
           onValueChange={(v) => v != null && updateField('card_type', v)}
         >
           <SelectTrigger id="card_type">
-            <SelectValue placeholder="Select card type" />
+            <SelectValue placeholder="" />
           </SelectTrigger>
           <SelectContent>
             {availableCards.map((type) => (
@@ -487,7 +727,7 @@ function FormFields({
               onValueChange={(v) => v != null && updateField('salutation', v)}
             >
               <SelectTrigger id="salutation">
-                <SelectValue placeholder="Select" />
+                <SelectValue placeholder="" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="Dr">Dr</SelectItem>
@@ -506,7 +746,7 @@ function FormFields({
               id="name_as_per_ic"
               value={formData.name_as_per_ic || ''}
               onChange={(e) => updateField('name_as_per_ic', e.target.value)}
-              placeholder="Siti Rahmah Binti Zulkifli"
+              placeholder=""
             />
           </div>
         </div>
@@ -519,7 +759,7 @@ function FormFields({
               onValueChange={(v) => v != null && updateField('gender', v)}
             >
               <SelectTrigger id="gender">
-                <SelectValue placeholder="Select" />
+                <SelectValue placeholder="" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="Male">Male</SelectItem>
@@ -531,7 +771,7 @@ function FormFields({
             <Label htmlFor="nationality">Nationality</Label>
             <Input
               id="nationality"
-              value={formData.nationality || 'Malaysian'}
+              value={formData.nationality || ''}
               onChange={(e) => updateField('nationality', e.target.value)}
             />
           </div>
@@ -541,7 +781,7 @@ function FormFields({
               id="mykad_number"
               value={formData.mykad_number || ''}
               onChange={(e) => updateField('mykad_number', e.target.value)}
-              placeholder="960823045188"
+              placeholder=""
             />
           </div>
         </div>
@@ -553,7 +793,7 @@ function FormFields({
               id="date_of_birth"
               value={formData.date_of_birth || ''}
               onChange={(e) => updateField('date_of_birth', e.target.value)}
-              placeholder="DD/MM/YYYY"
+              placeholder=""
             />
           </div>
           <div className="col-span-1 space-y-2">
@@ -563,7 +803,7 @@ function FormFields({
               onValueChange={(v) => v != null && updateField('race', v)}
             >
               <SelectTrigger id="race">
-                <SelectValue placeholder="Select" />
+                <SelectValue placeholder="" />
               </SelectTrigger>
               <SelectContent>
                 {dropdownOptions.race.map((r) => (
@@ -579,7 +819,7 @@ function FormFields({
               onValueChange={(v) => v != null && updateField('religion', v)}
             >
               <SelectTrigger id="religion">
-                <SelectValue placeholder="Select" />
+                <SelectValue placeholder="" />
               </SelectTrigger>
               <SelectContent>
                 {dropdownOptions.religion.map((r) => (
@@ -595,7 +835,7 @@ function FormFields({
               onValueChange={(v) => v != null && updateField('marital_status', v)}
             >
               <SelectTrigger id="marital_status">
-                <SelectValue placeholder="Select" />
+                <SelectValue placeholder="" />
               </SelectTrigger>
               <SelectContent>
                 {dropdownOptions.maritalStatus.map((s) => (
@@ -613,7 +853,7 @@ function FormFields({
               id="hp_number"
               value={formData.hp_number || ''}
               onChange={(e) => updateField('hp_number', e.target.value)}
-              placeholder="0173896769"
+              placeholder=""
             />
           </div>
           <div className="col-span-2 space-y-2">
@@ -623,7 +863,7 @@ function FormFields({
               type="email"
               value={formData.email_address || ''}
               onChange={(e) => updateField('email_address', e.target.value)}
-              placeholder="siti.zulkifli2308@gmail.com"
+              placeholder=""
             />
           </div>
           <div className="col-span-1 space-y-2">
@@ -633,7 +873,7 @@ function FormFields({
               onValueChange={(v) => v != null && updateField('education_level', v)}
             >
               <SelectTrigger id="education_level">
-                <SelectValue placeholder="Select" />
+                <SelectValue placeholder="" />
               </SelectTrigger>
               <SelectContent>
                 {dropdownOptions.educationLevel.map((e) => (
@@ -651,7 +891,7 @@ function FormFields({
               id="mother_name"
               value={formData.mother_name || ''}
               onChange={(e) => updateField('mother_name', e.target.value)}
-              placeholder="Norhayati"
+              placeholder=""
             />
           </div>
           <div className="space-y-2">
@@ -663,7 +903,7 @@ function FormFields({
               id="name_on_card"
               value={formData.name_on_card || ''}
               onChange={(e) => updateField('name_on_card', e.target.value.slice(0, 19))}
-              placeholder="SITI RAHMAH"
+              placeholder=""
               maxLength={19}
               className="font-mono"
             />
@@ -679,7 +919,7 @@ function FormFields({
             id="residential_address"
             value={formData.residential_address || ''}
             onChange={(e) => updateField('residential_address', e.target.value)}
-            placeholder="58 jln semerbak 3 taman bukit dahlia 81700 pasir gudang johor"
+            placeholder=""
             rows={2}
           />
         </div>
@@ -692,7 +932,7 @@ function FormFields({
               onValueChange={(v) => v != null && updateField('residence_status', v)}
             >
               <SelectTrigger id="residence_status">
-                <SelectValue placeholder="Select" />
+                <SelectValue placeholder="" />
               </SelectTrigger>
               <SelectContent>
                 {dropdownOptions.residenceStatus.map((s) => (
@@ -703,10 +943,12 @@ function FormFields({
           </div>
           <div className="flex items-end space-y-2 pb-2">
             <div className="flex items-center space-x-2">
-              <Checkbox
+              <input
+                type="checkbox"
                 id="related_to_bmm_staff"
-                checked={formData.related_to_bmm_staff || false}
-                onCheckedChange={(v) => updateField('related_to_bmm_staff', !!v)}
+                checked={formData.related_to_bmm_staff ?? false}
+                onChange={(e) => updateField('related_to_bmm_staff', e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-600"
               />
               <Label htmlFor="related_to_bmm_staff" className="text-sm">
                 Related to BMMB Staff
@@ -731,7 +973,7 @@ function FormFields({
               id="employer_name"
               value={formData.employer_name || ''}
               onChange={(e) => updateField('employer_name', e.target.value)}
-              placeholder="Hong Leong Bank Berhad"
+              placeholder=""
             />
           </div>
         </div>
@@ -746,7 +988,7 @@ function FormFields({
               id="occupation"
               value={formData.occupation || ''}
               onChange={(e) => updateField('occupation', e.target.value)}
-              placeholder="e.g., Engineer, Doctor, Teacher"
+              placeholder=""
             />
           </div>
           <div className="space-y-2">
@@ -758,7 +1000,7 @@ function FormFields({
               id="position"
               value={formData.position || ''}
               onChange={(e) => updateField('position', e.target.value)}
-              placeholder="e.g., Manager, Executive, MD"
+              placeholder=""
             />
           </div>
         </div>
@@ -771,7 +1013,7 @@ function FormFields({
               onValueChange={(v) => v != null && updateField('employment_status', v)}
             >
               <SelectTrigger id="employment_status">
-                <SelectValue placeholder="Select" />
+                <SelectValue placeholder="" />
               </SelectTrigger>
               <SelectContent>
                 {dropdownOptions.employmentStatus.map((s) => (
@@ -787,7 +1029,7 @@ function FormFields({
               onValueChange={(v) => v != null && updateField('business_classification', v)}
             >
               <SelectTrigger id="business_classification">
-                <SelectValue placeholder="Select" />
+                <SelectValue placeholder="" />
               </SelectTrigger>
               <SelectContent>
                 {dropdownOptions.businessClassification.map((b) => (
@@ -802,7 +1044,7 @@ function FormFields({
               id="office_number"
               value={formData.office_number || ''}
               onChange={(e) => updateField('office_number', e.target.value)}
-              placeholder="078617488"
+              placeholder=""
             />
           </div>
           <div className="col-span-1 space-y-2">
@@ -812,7 +1054,7 @@ function FormFields({
               onValueChange={(v) => v != null && updateField('employment_type', v)}
             >
               <SelectTrigger id="employment_type">
-                <SelectValue placeholder="Select" />
+                <SelectValue placeholder="" />
               </SelectTrigger>
               <SelectContent>
                 {dropdownOptions.employmentType.map((t) => (
@@ -830,7 +1072,7 @@ function FormFields({
               id="length_of_service"
               value={formData.length_of_service || ''}
               onChange={(e) => updateField('length_of_service', e.target.value)}
-              placeholder="Since: 01/08/2023"
+              placeholder=""
             />
           </div>
           <div className="col-span-1 space-y-2">
@@ -840,7 +1082,7 @@ function FormFields({
               onValueChange={(v) => v != null && updateField('employment_sector', v)}
             >
               <SelectTrigger id="employment_sector">
-                <SelectValue placeholder="Select" />
+                <SelectValue placeholder="" />
               </SelectTrigger>
               <SelectContent>
                 {dropdownOptions.employmentSector.map((s) => (
@@ -857,9 +1099,29 @@ function FormFields({
             id="office_address"
             value={formData.office_address || ''}
             onChange={(e) => updateField('office_address', e.target.value)}
-            placeholder="35 jln johor 1 tmn Desa cemerlang 81800 ulu tiram johor"
+            placeholder=""
             rows={2}
           />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="hr_email" className="flex items-center gap-1">
+            HR Email (For Malaysian working in Singapore)
+            {formData.nationality === 'Malaysian' && isSingaporeAddress(formData.office_address) && (
+              <span className="text-xs text-orange-600 font-normal">⚠️ Required</span>
+            )}
+          </Label>
+          <Input
+            id="hr_email"
+            type="email"
+            value={formData.hr_email || ''}
+            onChange={(e) => updateField('hr_email', e.target.value)}
+            placeholder="hr@company.com"
+            className={formData.nationality === 'Malaysian' && isSingaporeAddress(formData.office_address) && !formData.hr_email ? 'border-orange-500' : ''}
+          />
+          {formData.nationality === 'Malaysian' && isSingaporeAddress(formData.office_address) && !formData.hr_email && (
+            <p className="text-xs text-orange-600">HR Email is required for Malaysians working in Singapore</p>
+          )}
         </div>
       </div>
 
@@ -878,7 +1140,7 @@ function FormFields({
               id="monthly_income"
               value={formData.monthly_income || ''}
               onChange={(e) => updateField('monthly_income', e.target.value)}
-              placeholder="3000"
+              placeholder=""
             />
           </div>
           <div className="col-span-2 space-y-2">
@@ -887,7 +1149,7 @@ function FormFields({
               id="other_income_source"
               value={formData.other_income_source || ''}
               onChange={(e) => updateField('other_income_source', e.target.value)}
-              placeholder="0"
+              placeholder=""
             />
           </div>
         </div>
@@ -908,7 +1170,7 @@ function FormFields({
               id="emergency_full_name"
               value={formData.emergency_full_name || ''}
               onChange={(e) => updateField('emergency_full_name', e.target.value)}
-              placeholder="Syafiq"
+              placeholder=""
             />
           </div>
           <div className="col-span-1 space-y-2">
@@ -917,7 +1179,7 @@ function FormFields({
               id="emergency_contact_number"
               value={formData.emergency_contact_number || ''}
               onChange={(e) => updateField('emergency_contact_number', e.target.value)}
-              placeholder="0173896769"
+              placeholder=""
             />
           </div>
           <div className="col-span-1 space-y-2">
@@ -926,7 +1188,7 @@ function FormFields({
               id="emergency_relation"
               value={formData.emergency_relation || ''}
               onChange={(e) => updateField('emergency_relation', e.target.value)}
-              placeholder="Spouse"
+              placeholder=""
             />
           </div>
         </div>
@@ -942,20 +1204,24 @@ function FormFields({
 
         <div className="flex flex-col space-y-2">
           <div className="flex items-center space-x-2">
-            <Checkbox
+            <input
+              type="checkbox"
               id="agree_tawarruq"
-              checked={formData.agree_tawarruq || false}
-              onCheckedChange={(v) => updateField('agree_tawarruq', !!v)}
+              checked={formData.agree_tawarruq ?? false}
+              onChange={(e) => updateField('agree_tawarruq', e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-600"
             />
             <Label htmlFor="agree_tawarruq" className="text-sm">
               I Agree
             </Label>
           </div>
           <div className="flex items-center space-x-2">
-            <Checkbox
+            <input
+              type="checkbox"
               id="agree_unspecified"
-              checked={formData.agree_unspecified || false}
-              onCheckedChange={(v) => updateField('agree_unspecified', !!v)}
+              checked={formData.agree_unspecified ?? false}
+              onChange={(e) => updateField('agree_unspecified', e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-600"
             />
             <Label htmlFor="agree_unspecified" className="text-sm">
               Unspecified
@@ -974,20 +1240,24 @@ function FormFields({
 
         <div className="flex flex-col space-y-2">
           <div className="flex items-center space-x-2">
-            <Checkbox
+            <input
+              type="checkbox"
               id="fatca_decl_1"
-              checked={formData.fatca_decl_1 || false}
-              onCheckedChange={(v) => updateField('fatca_decl_1', !!v)}
+              checked={formData.fatca_decl_1 ?? false}
+              onChange={(e) => updateField('fatca_decl_1', e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-600"
             />
             <Label htmlFor="fatca_decl_1" className="text-sm">
               No (1)
             </Label>
           </div>
           <div className="flex items-center space-x-2">
-            <Checkbox
+            <input
+              type="checkbox"
               id="fatca_decl_2"
-              checked={formData.fatca_decl_2 || false}
-              onCheckedChange={(v) => updateField('fatca_decl_2', !!v)}
+              checked={formData.fatca_decl_2 ?? false}
+              onChange={(e) => updateField('fatca_decl_2', e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-600"
             />
             <Label htmlFor="fatca_decl_2" className="text-sm">
               No (2)
@@ -1005,10 +1275,12 @@ function FormFields({
         </h3>
 
         <div className="flex items-center space-x-2">
-          <Checkbox
+          <input
+            type="checkbox"
             id="tax_fatca_decl"
-            checked={formData.tax_fatca_decl || false}
-            onCheckedChange={(v) => updateField('tax_fatca_decl', !!v)}
+            checked={formData.tax_fatca_decl ?? false}
+            onChange={(e) => updateField('tax_fatca_decl', e.target.checked)}
+            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-600"
           />
           <Label htmlFor="tax_fatca_decl" className="text-sm">
             I have accessed, read, and understood the Tax & FATCA Declaration
@@ -1025,10 +1297,12 @@ function FormFields({
         </h3>
 
         <div className="flex items-center space-x-2">
-          <Checkbox
+          <input
+            type="checkbox"
             id="agree_declaration"
-            checked={formData.agree_declaration || false}
-            onCheckedChange={(v) => updateField('agree_declaration', !!v)}
+            checked={formData.agree_declaration ?? false}
+            onChange={(e) => updateField('agree_declaration', e.target.checked)}
+            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-600"
           />
           <Label htmlFor="agree_declaration" className="text-sm">
             I agree to the Declaration & Personal Data Protection Act 2010

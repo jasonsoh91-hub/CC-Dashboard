@@ -72,6 +72,13 @@ const OCBC_FIELD_MAPPINGS = {
   hp_first_3: 'hp_first_3',
   hp_second_8: 'hp_second_8',
 
+  // Passport (OCBC specific)
+  passport_number: 'passport_number',
+  passport_expiry_day: 'passport_expiry_day',
+  passport_expiry_month: 'passport_expiry_month',
+  passport_expiry_year: 'passport_expiry_year',
+  old_nric: 'old_NRIC',
+
   // Address
   home_address_1: 'home_address_1',
   home_address_2: 'home_address_2',
@@ -121,7 +128,7 @@ export async function fillOCBCFormWithFields(pdfBytes: Buffer, data: Application
   const form = pdfDoc.getForm();
   console.log('[PDF] OCBC form loaded with', form.getFields().length, 'fields');
 
-  // Helper to set text field
+  // Helper to set text field - using native form positioning for accuracy
   const setText = (fieldName: string, value: string | null | undefined) => {
     if (!value || value === 'null' || value === 'undefined') return;
     try {
@@ -262,6 +269,15 @@ export async function fillOCBCFormWithFields(pdfBytes: Buffer, data: Application
     setText(OCBC_FIELD_MAPPINGS.hp_first_3, hp.substring(0, 3));
     setText(OCBC_FIELD_MAPPINGS.hp_second_8, hp.substring(3, 11));
   }
+
+  // Passport (OCBC specific)
+  setText(OCBC_FIELD_MAPPINGS.passport_number, data.passport_number);
+  if (data.passport_expiry_day && data.passport_expiry_month && data.passport_expiry_year) {
+    setText(OCBC_FIELD_MAPPINGS.passport_expiry_day, data.passport_expiry_day);
+    setText(OCBC_FIELD_MAPPINGS.passport_expiry_month, data.passport_expiry_month);
+    setText(OCBC_FIELD_MAPPINGS.passport_expiry_year, data.passport_expiry_year);
+  }
+  setText(OCBC_FIELD_MAPPINGS.old_nric, data.old_nric);
 
   // Address
   const address = data.residential_address || '';

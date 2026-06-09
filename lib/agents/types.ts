@@ -19,6 +19,7 @@ export interface ExtractedData {
   phone: string | null;
   email: string | null;
   address: string | null;
+  nationality?: string | null;
   mother_name: string | null;
   employer_name: string | null;
   employer_address: string | null;
@@ -30,6 +31,7 @@ export interface ExtractedData {
   emergency_name: string | null;
   emergency_phone: string | null;
   emergency_relation: string | null;
+  education_level?: string | null;
   gender?: string;
   business_classification?: string;
   employment_sector?: string;

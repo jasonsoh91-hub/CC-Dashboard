@@ -86,19 +86,32 @@ async function fillBankMuamalatForm(pdfBytes: Buffer, data: ApplicationFormData)
   };
 
   // ==================== CARD TYPE ====================
-  uncheckField('Visa Platinum-i Checkbutton');
-  uncheckField('Visa Infinitei Checkbutton');
-  uncheckField('Muamalat Pos Visa Platinum-i Checkbutton');
-  uncheckField('Muamalat Eon Visa Platinum-i Checkbutton');
-  uncheckField('Muamalat Pos Visa Infinite-i Checkbutton');
-  uncheckField('Muamalat AmanahRaya Visa Platinum-i Checkbutton');
-  uncheckField('Muamalat Eon Visa Infinite-i Checkbutton');
+  // Uncheck all card type checkboxes first
+  const cardTypeCheckboxes = [
+    'Visa Platinum-i Checkbutton',
+    'Visa Infinitei Checkbutton',
+    'Muamalat Pos Visa Platinum-i Checkbutton',
+    'Muamalat Eon Visa Platinum-i Checkbutton',
+    'Muamalat Pos Visa Infinite-i Checkbutton',
+    'Muamalat AmanahRaya Visa Platinum-i Checkbutton',
+    'Muamalat Eon Visa Infinite-i Checkbutton',
+  ];
+  cardTypeCheckboxes.forEach(cb => uncheckField(cb));
 
+  // Check the selected card type
   if (data.card_type) {
-    if (data.card_type === 'Visa Platinum-i') {
-      setCheck('Visa Platinum-i Checkbutton', true);
-    } else if (data.card_type === 'Visa Infinite-i') {
-      setCheck('Visa Infinitei Checkbutton', true);
+    const cardTypeMapping: Record<string, string> = {
+      'Visa Platinum-i': 'Visa Platinum-i Checkbutton',
+      'Visa Infinite-i': 'Visa Infinitei Checkbutton',
+      'Muamalat Eon Visa Platinum-i': 'Muamalat Eon Visa Platinum-i Checkbutton',
+      'Muamalat Eon Visa Infinite-i': 'Muamalat Eon Visa Infinite-i Checkbutton',
+      'Muamalat Pos Visa Platinum-i': 'Muamalat Pos Visa Platinum-i Checkbutton',
+      'Muamalat Pos Visa Infinite-i': 'Muamalat Pos Visa Infinite-i Checkbutton',
+      'Muamalat AmanahRaya Visa Platinum-i': 'Muamalat AmanahRaya Visa Platinum-i Checkbutton',
+    };
+    const checkboxName = cardTypeMapping[data.card_type];
+    if (checkboxName) {
+      setCheck(checkboxName, true);
     }
   }
 
@@ -129,8 +142,12 @@ async function fillBankMuamalatForm(pdfBytes: Buffer, data: ApplicationFormData)
   setText('Race', data.race);
   setText('Religion', data.religion);
   setText('Marital Status', data.marital_status);
+  setText('House Tel', data.house_tel_no);
   setText('HP', data.hp_number);
   setText('email', data.email_address);
+
+  // Police/Military ID
+  setText('Police Military ID', data.police_military_id);
 
   const nameOnCard = truncateNameForCard(data.name_on_card || data.name_as_per_ic || '');
   setText('Name on Card', nameOnCard);
@@ -140,10 +157,21 @@ async function fillBankMuamalatForm(pdfBytes: Buffer, data: ApplicationFormData)
   setText('Residential Address 1', addressLines[0]);
   setText('Residential Address 2', addressLines[1]);
 
+  // Use explicit fields if provided, otherwise parse from address
   const { postcode, city, state } = parseMalaysianAddress(address);
-  setText('Postcode', postcode || data.postcode);
-  setText('City', city || data.city);
-  setText('State', state || data.state);
+  setText('Postcode', data.postcode || postcode);
+  setText('City', data.city || city);
+  setText('State', data.state || state);
+
+  // Correspondence Address (if different from residential)
+  if (data.correspondence_address) {
+    const corrAddressLines = splitAddress(data.correspondence_address, 2);
+    setText('Correspondence Address 1', corrAddressLines[0]);
+    setText('Correspondence Address 2', corrAddressLines[1]);
+    setText('Correspondence Postcode', data.correspondence_postcode);
+    setText('Correspondence City', data.correspondence_city);
+    setText('Correspondence State', data.correspondence_state);
+  }
 
   setText('Education Level', data.education_level);
 
@@ -151,6 +179,11 @@ async function fillBankMuamalatForm(pdfBytes: Buffer, data: ApplicationFormData)
   uncheckField('BMMB Staff No');
   if (data.related_to_bmm_staff) {
     setCheck('BMMB Staff Yes', true);
+    // BMMB Staff details (if related)
+    setText('BMM Staff Name', data.bmm_staff_name);
+    setText('BMM Staff ID', data.bmm_staff_id);
+    setText('BMM Staff Relationship', data.bmm_staff_relationship);
+    setText('BMM Staff Department', data.bmm_staff_department);
   } else {
     setCheck('BMMB Staff No', true);
   }
@@ -171,14 +204,16 @@ async function fillBankMuamalatForm(pdfBytes: Buffer, data: ApplicationFormData)
   setText('Office Address  1', officeAddressLines[0]);
   setText('Office Address  2', officeAddressLines[1]);
 
+  // Use explicit fields if provided, otherwise parse from address
   const officeParsed = parseMalaysianAddress(officeAddress);
-  setText('Office Postcode', officeParsed.postcode);
-  setText('Office City', officeParsed.city);
-  setText('Office State', officeParsed.state);
+  setText('Office Postcode', data.office_postcode || officeParsed.postcode);
+  setText('Office City', data.office_city || officeParsed.city);
+  setText('Office State', data.office_state || officeParsed.state);
 
   // ==================== C. APPLICANT'S INCOME ====================
   setText('Monthly Income', data.monthly_income);
   setText('Other Income', data.other_income_source);
+  setText('Monthly Commitment', data.monthly_commitment);
 
   // ==================== D. EMERGENCY CONTACT ====================
   setText('Emergency Contact Name', data.emergency_full_name);
@@ -186,9 +221,24 @@ async function fillBankMuamalatForm(pdfBytes: Buffer, data: ApplicationFormData)
   setText('Emergency Relation', data.emergency_relation);
 
   // ==================== I. CREDIT CARD-i FINANCING ====================
+  // Financing limit type
+  uncheckField('Financing Specified');
+  uncheckField('Financing Unspecified');
+  if (data.financing_limit_type === 'specified') {
+    setCheck('Financing Specified', true);
+    setText('Specified Financing Limit', data.specified_financing_limit);
+  } else {
+    setCheck('Financing Unspecified', true);
+  }
+
   uncheckField('Agree Aqad');
   if (data.agree_tawarruq) {
     setCheck('Agree Aqad', true);
+  }
+
+  // Unspecified checkbox
+  if (data.agree_unspecified) {
+    setCheck('Agree Unspecified', true);
   }
 
   // ==================== J. FATCA/CRS DECLARATION ====================
@@ -223,6 +273,16 @@ async function fillBankMuamalatForm(pdfBytes: Buffer, data: ApplicationFormData)
   if (data.agree_declaration) {
     setCheck('Agree Declare', true);
   }
+
+  // ==================== SALES EXECUTIVE INFO (For BMMB Use Only) ====================
+  setText('Sales Exec Name', data.sales_exec_name);
+  setText('Sales Exec IC', data.sales_exec_ic);
+  setText('Sales Exec Staff ID', data.sales_exec_staff_id);
+  setText('Sales Exec Email', data.sales_exec_email);
+  setText('Branch Name', data.branch_name);
+  setText('Branch Tel', data.branch_tel_no);
+  setText('Branch Manager Name', data.branch_manager_name);
+  setText('Branch Manager Email', data.branch_manager_email);
 
   // ==================== SIGNATURE DATES ====================
   const today = new Date().toLocaleDateString('en-GB');

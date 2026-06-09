@@ -144,6 +144,7 @@ function parseCustomerData(rawText: string): ExtractedData {
     phone: null,
     email: null,
     address: null,
+    nationality: null,
     mother_name: null,
     employer_name: null,
     employer_address: null,
@@ -165,6 +166,13 @@ function parseCustomerData(rawText: string): ExtractedData {
 
     // Skip empty lines
     if (!line) continue;
+
+    // Handle emergency contact name on same line as section marker (before section detection)
+    if (/emergency\s*contact\s*name|emergency\s*name/i.test(lowerLine)) {
+      data.emergency_name = extractAfterColon(line);
+      inEmergencySection = true; // Still mark that we're in emergency section
+      continue;
+    }
 
     // Detect emergency section
     if (/^emergency\s*(contact)?/i.test(lowerLine)) {
@@ -228,14 +236,14 @@ function parseCustomerData(rawText: string): ExtractedData {
     }
 
     // ===== EMPLOYER / COMPANY NAME =====
-    // Matches: "Employer Name:", "Company Name:", "Name of Company:", "Employer:", "Company:", etc.
-    if (/employer\s+name|company\s+name|name\s+of\s+(?:company|employer)|^employer\s*[:=]|^company\s*[:=]/i.test(line)) {
+    // Matches: "Employer Name:", "Company Name:", "Name of Company:", "Name Employer:", "Employer:", "Company:", etc.
+    if (/employer\s+name|company\s+name|name\s+of\s+(?:company|employer)|^employer\s*[:=]|^company\s*[:=]|name\s+employer/i.test(line)) {
       data.employer_name = extractAfterColon(line);
     }
 
     // ===== EMPLOYER ADDRESS =====
-    // Matches: "Employer Address:", "Company address:", "Office Address:", etc.
-    if (/employer\s*address|company\s*address|office\s*address/i.test(lowerLine)) {
+    // Matches: "Employer Address:", "Company address:", "Office Address:", "Address Employer:", etc.
+    if (/employer\s*address|company\s*address|office\s*address|address\s*employer/i.test(lowerLine)) {
       data.employer_address = extractAfterColon(line);
     }
 
@@ -280,6 +288,11 @@ function parseCustomerData(rawText: string): ExtractedData {
         // Skip for now
       }
     }
+
+    // Handle "Emergency contact Name:" on same line (outside of section)
+    if (/emergency\s*contact\s*name|emergency\s*name/i.test(lowerLine)) {
+      data.emergency_name = extractAfterColon(line);
+    }
   }
 
   // Second pass: If name still not found, get from first meaningful line
@@ -305,6 +318,16 @@ function parseCustomerData(rawText: string): ExtractedData {
   // Expand abbreviations for position and occupation
   if (data.position) data.position = expandAbbreviations(data.position);
   if (data.occupation) data.occupation = expandAbbreviations(data.occupation);
+
+  // Infer nationality from address
+  if (data.address) {
+    data.nationality = inferNationality(data.address);
+  }
+
+  // Convert work_since from date to years/months format
+  if (data.work_since) {
+    data.work_since = formatWorkSince(data.work_since);
+  }
 
   return data;
 }
@@ -424,4 +447,146 @@ function extractPhone(line: string): string {
   // Match Malaysian phone formats: 01X-XXXXXXXX, 01X XXXXXXXX, or 03-XXXXXXXX
   const match = line.match(/(0\d{1,2}[-\s]?\d{7,8})/);
   return match ? match[1] : '';
+}
+
+// Infer nationality from address
+function inferNationality(address: string): string | null {
+  if (!address) return null;
+
+  const lowerAddress = address.toLowerCase();
+
+  // Malaysian states/territories
+  const malaysianStates = [
+    'johor', 'kedah', 'kelantan', 'melaka', 'negeri sembilan',
+    'pahang', 'perak', 'perlis', 'pulau pinang', 'penang',
+    'sabah', 'sarawak', 'selangor', 'terengganu',
+    'kuala lumpur', 'labuan', 'putrajaya'
+  ];
+
+  // Malaysian postcode patterns (5-digit)
+  const malaysianPostcode = /\b\d{5}\b/;
+
+  // Singapore (6-digit postcode)
+  const singaporePostcode = /\b\d{6}\b/;
+
+  // Check for Singapore
+  if (singaporePostcode.test(address) || lowerAddress.includes('singapore')) {
+    return 'Singaporean';
+  }
+
+  // Check for Malaysian states
+  for (const state of malaysianStates) {
+    if (lowerAddress.includes(state)) {
+      return 'Malaysian';
+    }
+  }
+
+  // Check for Malaysian postcode (5 digits)
+  if (malaysianPostcode.test(address)) {
+    return 'Malaysian';
+  }
+
+  return null;
+}
+
+// Format work_since from date to years/months format
+function formatWorkSince(value: string | null): string | null {
+  if (!value) return null;
+
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  // Check if already in years/months format
+  if (/(\d+)\s*(year|month|years|months)/i.test(trimmed)) {
+    return trimmed;
+  }
+
+  // Try to parse as date and calculate duration
+  const duration = calculateDuration(trimmed);
+  if (duration) {
+    return duration;
+  }
+
+  // Return original if can't parse
+  return trimmed;
+}
+
+// Calculate duration from date string to years/months
+function calculateDuration(dateString: string): string | null {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1; // 1-12
+
+  let joinedYear: number | null = null;
+  let joinedMonth: number | null = null;
+
+  // Match "Month Year" format (e.g., "June 2024")
+  const monthYearMatch = dateString.match(/^([A-Za-z]+)\s+(\d{4})$/i);
+  if (monthYearMatch) {
+    const monthNames: Record<string, number> = {
+      jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3,
+      apr: 4, april: 4, may: 5, jun: 6, june: 6, jul: 7, july: 7,
+      aug: 8, august: 8, sep: 9, september: 9, oct: 10, october: 10,
+      nov: 11, november: 11, dec: 12, december: 12
+    };
+    joinedMonth = monthNames[monthYearMatch[1].toLowerCase()];
+    joinedYear = parseInt(monthYearMatch[2]);
+  }
+
+  // Match "DD/MM/YYYY" or "D/M/YYYY" format (Malaysian format: day/month/year)
+  const slashMatch = dateString.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (slashMatch) {
+    const day = parseInt(slashMatch[1]);
+    joinedMonth = parseInt(slashMatch[2]);
+    joinedYear = parseInt(slashMatch[3]);
+    // Only accept if day is valid (1-31)
+    if (day < 1 || day > 31) {
+      joinedMonth = null;
+      joinedYear = null;
+    }
+  }
+
+  // Match "MM/YYYY" format
+  const monthYearOnlyMatch = dateString.match(/^(\d{1,2})\/(\d{4})$/);
+  if (monthYearOnlyMatch && !slashMatch) {
+    joinedMonth = parseInt(monthYearOnlyMatch[1]);
+    joinedYear = parseInt(monthYearOnlyMatch[2]);
+  }
+
+  // Match "YYYY-MM" format
+  const dashMatch = dateString.match(/^(\d{4})-(\d{1,2})$/);
+  if (dashMatch) {
+    joinedYear = parseInt(dashMatch[1]);
+    joinedMonth = parseInt(dashMatch[2]);
+  }
+
+  // Match just year (e.g., "2024")
+  const yearMatch = dateString.match(/^(\d{4})$/);
+  if (yearMatch) {
+    joinedYear = parseInt(yearMatch[1]);
+    joinedMonth = 1; // Assume January if only year is provided
+  }
+
+  if (joinedYear && joinedMonth) {
+    const totalMonthsJoined = joinedYear * 12 + joinedMonth;
+    const totalMonthsCurrent = currentYear * 12 + currentMonth;
+    const monthsDiff = totalMonthsCurrent - totalMonthsJoined;
+
+    if (monthsDiff < 0) {
+      return dateString; // Future date, return original
+    }
+
+    const years = Math.floor(monthsDiff / 12);
+    const months = monthsDiff % 12;
+
+    if (years > 0 && months > 0) {
+      return `${years} year${years > 1 ? 's' : ''} ${months} month${months > 1 ? 's' : ''}`;
+    } else if (years > 0) {
+      return `${years} year${years > 1 ? 's' : ''}`;
+    } else if (months > 0) {
+      return `${months} month${months > 1 ? 's' : ''}`;
+    }
+  }
+
+  return null;
 }

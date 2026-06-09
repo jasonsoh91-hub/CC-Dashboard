@@ -66,29 +66,44 @@ Return this exact JSON structure:
 {
   "name": "full name from 'Name:', 'Applicant Name', etc.",
   "ic_number": "12-digit Malaysian IC number",
-  "phone": "mobile phone from 'Contact number:', 'HP:', 'Mobile:' - digits only",
-  "email": "email address",
+  "phone": "APPLICANT'S mobile phone ONLY - from 'HP:', 'HP No:', 'Mobile:', 'Mobile No:', 'Tel:' - DO NOT extract emergency contact numbers",
+  "email": "PERSONAL email from 'Email:' (NOT work/HR email) - prioritize gmail, outlook, hotmail, yahoo over corporate emails",
   "address": "residential address from 'Residential Address:', 'Address:'",
+  "nationality": "nationality - infer 'Malaysian' if address contains Malaysian states (Johor, Kedah, Kelantan, Melaka, Negeri Sembilan, Pahang, Perak, Perlis, Pulau Pinang, Sabah, Sarawak, Selangor, Terengganu, Kuala Lumpur, Labuan, Putrajaya) or Malaysian postcodes, otherwise 'Singaporean' for Singapore addresses, etc.",
   "mother_name": "mother's maiden name",
   "employer_name": "company name from 'Company name:', 'Employer:'",
   "employer_address": "office address",
   "position": "job position from 'Position:' - expand abbreviations (MD=Managing Director, GM=General Manager)",
   "occupation": "occupation type (Business, Engineer, Doctor, etc.)",
-  "office_phone": "office phone from 'Office Number:', 'Office:' - digits only",
-  "work_since": "length of service from 'Length in Service:', 'Since:', 'Date joined:'",
-  "work_email": "work email if available",
-  "emergency_name": "emergency contact name",
-  "emergency_phone": "emergency contact phone - digits only",
+  "office_phone": "office phone from 'Office Number:', 'Office:', 'Office Tel:' - digits only",
+  "work_since": "length of service from 'Length in Service:', 'Since:', 'Date joined:' - EXTRACT the raw date value (e.g., 'June 2024', 'January 2023'). The system will automatically convert this to years/months format.",
+  "work_email": "work/HR email from 'HR Email:', 'Work Email:' - this is SEPARATE from personal email",
+  "education_level": "education level from 'Education Level:', 'Education:' - (SPM, STPM, Diploma, Degree, Master, PhD, Others)",
+  "emergency_name": "emergency contact name - from 'Emergency Name:', 'Emergency Contact Name:'",
+  "emergency_phone": "emergency contact phone - from 'Emergency Contact:', 'Emergency Contact No:', 'Emergency Tel:' ONLY - DO NOT use applicant's HP number",
   "emergency_relation": "relationship to emergency contact"
 }
 
+CRITICAL PHONE NUMBER EXTRACTION RULES:
+1. APPLICANT'S PHONE (phone field): ONLY extract from 'HP:', 'HP No:', 'Mobile:', 'Mobile No:', 'Tel:', 'Telephone:'
+2. EMERGENCY PHONE (emergency_phone field): ONLY extract from 'Emergency Contact:', 'Emergency Contact No:', 'Emergency Tel:', 'Emergency Contact HP:'
+3. If a phone number is under an "Emergency" section, it goes to emergency_phone, NOT phone
+4. OFFICE PHONE (office_phone field): ONLY extract from 'Office:', 'Office No:', 'Office Tel:', 'Office Number:'
+5. If no clear HP/Mobile number is found, leave phone field as null - DO NOT guess or use emergency contact
+
 CRITICAL mappings for Malaysian forms:
-- "IC/Passport: XXX" → ic_number
-- "Contact number: XXX" → phone
-- "Company name: XXX" → employer_name
+- "IC/Passport: XXX" or "Identical number: XXX" → ic_number
+- "Company name: XXX" or "Name Employer: XXX" → employer_name
+- "Address Employer: XXX" or "Company address: XXX" → employer_address
 - "Position: MD" → position = "Managing Director"
-- "Office Number : XXX" → office_phone
+- "Office Number : XXX" or "Office number: XXX" → office_phone
 - "Nature of business" is NOT occupation - it describes the business type
+- For Malaysian addresses containing states like "Sarawak", "Selangor", etc. → nationality = "Malaysian"
+- For Singapore addresses (6-digit postcode like 123456) → nationality = "Singaporean"
+- EMAIL RULES: "Email: xxx" → personal email, "HR Email: xxx" or "Work email address:" → work_email ONLY
+- If multiple emails exist, use the one from "Email:" or "Personal Email:" for 'email' field
+- EMERGENCY: "Emergency contact Name:" → emergency_name, "No Hp:" under emergency section → emergency_phone
+- "How many year working:" → work_since (extract the raw date value)
 - Return null (not empty string) for missing fields`;
   }
 
@@ -104,24 +119,71 @@ CRITICAL mappings for Malaysian forms:
       return phone.replace(/[^\d]/g, '');
     };
 
+    // Infer nationality from address if not provided
+    let nationality = clean(data.nationality);
+    if (!nationality && data.address) {
+      nationality = this.inferNationality(data.address);
+    }
+
     return {
       name: clean(data.name),
       ic_number: cleanPhone(clean(data.ic_number)),
       phone: cleanPhone(clean(data.phone)),
       email: clean(data.email),
       address: clean(data.address),
+      nationality: nationality || 'Malaysian', // Default to Malaysian
       mother_name: clean(data.mother_name),
       employer_name: clean(data.employer_name),
       employer_address: clean(data.employer_address),
       position: clean(data.position),
       occupation: clean(data.occupation),
       office_phone: cleanPhone(clean(data.office_phone)),
-      work_since: clean(data.work_since),
+      work_since: this.formatWorkSince(clean(data.work_since)),
       work_email: clean(data.work_email),
+      education_level: clean(data.education_level),
       emergency_name: clean(data.emergency_name),
       emergency_phone: cleanPhone(clean(data.emergency_phone)),
       emergency_relation: clean(data.emergency_relation),
     };
+  }
+
+  private inferNationality(address: string): string | null {
+    if (!address) return null;
+
+    const lowerAddress = address.toLowerCase();
+
+    // Malaysian states/territories
+    const malaysianStates = [
+      'johor', 'kedah', 'kelantan', 'melaka', 'negeri sembilan',
+      'pahang', 'perak', 'perlis', 'pulau pinang', 'penang',
+      'sabah', 'sarawak', 'selangor', 'terengganu',
+      'kuala lumpur', 'labuan', 'putrajaya'
+    ];
+
+    // Malaysian postcode patterns (5-digit)
+    const malaysianPostcode = /\b\d{5}\b/;
+
+    // Singapore (6-digit postcode)
+    const singaporePostcode = /\b\d{6}\b/;
+
+    // Check for Singapore
+    if (singaporePostcode.test(address) || lowerAddress.includes('singapore')) {
+      return 'Singaporean';
+    }
+
+    // Check for Malaysian states
+    for (const state of malaysianStates) {
+      if (lowerAddress.includes(state)) {
+        return 'Malaysian';
+      }
+    }
+
+    // Check for Malaysian postcode (5 digits)
+    if (malaysianPostcode.test(address)) {
+      return 'Malaysian';
+    }
+
+    return null;
   }
 
   private calculateConfidence(data: ExtractedData): number {
@@ -144,6 +206,109 @@ CRITICAL mappings for Malaysian forms:
     }
 
     return Math.min(100, score);
+  }
+
+  private formatWorkSince(value: string | null): string | null {
+    if (!value) return null;
+
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+
+    // Check if already in years/months format
+    if (/(\d+)\s*(year|month|years|months)/i.test(trimmed)) {
+      return trimmed;
+    }
+
+    // Try to parse as date and calculate duration
+    const duration = this.calculateDuration(trimmed);
+    if (duration) {
+      return duration;
+    }
+
+    // Return original if can't parse
+    return trimmed;
+  }
+
+  private calculateDuration(dateString: string): string | null {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1; // 1-12
+
+    // Try to parse various date formats
+    // Format: "June 2024", "Jan 2023", "01/2023", "2023-06", "1/8/2023" (DD/MM/YYYY), etc.
+    let joinedYear: number | null = null;
+    let joinedMonth: number | null = null;
+
+    // Match "Month Year" format (e.g., "June 2024")
+    const monthYearMatch = dateString.match(/^([A-Za-z]+)\s+(\d{4})$/i);
+    if (monthYearMatch) {
+      const monthNames: Record<string, number> = {
+        jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3,
+        apr: 4, april: 4, may: 5, jun: 6, june: 6, jul: 7, july: 7,
+        aug: 8, august: 8, sep: 9, september: 9, oct: 10, october: 10,
+        nov: 11, november: 11, dec: 12, december: 12
+      };
+      joinedMonth = monthNames[monthYearMatch[1].toLowerCase()];
+      joinedYear = parseInt(monthYearMatch[2]);
+    }
+
+    // Match "DD/MM/YYYY" format (Malaysian format: day/month/year)
+    const ddmmyyyyMatch = dateString.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (ddmmyyyyMatch) {
+      const day = parseInt(ddmmyyyyMatch[1]);
+      joinedMonth = parseInt(ddmmyyyyMatch[2]);
+      joinedYear = parseInt(ddmmyyyyMatch[3]);
+      // Only accept if day is valid (1-31)
+      if (day < 1 || day > 31) {
+        joinedMonth = null;
+        joinedYear = null;
+      }
+    }
+
+    // Match "MM/YYYY" format (only if not already matched as DD/MM/YYYY)
+    const slashMatch = dateString.match(/^(\d{1,2})\/(\d{4})$/);
+    if (slashMatch && !ddmmyyyyMatch) {
+      joinedMonth = parseInt(slashMatch[1]);
+      joinedYear = parseInt(slashMatch[2]);
+    }
+
+    // Match "YYYY-MM" format
+    const dashMatch = dateString.match(/^(\d{4})-(\d{1,2})$/);
+    if (dashMatch) {
+      joinedYear = parseInt(dashMatch[1]);
+      joinedMonth = parseInt(dashMatch[2]);
+    }
+
+    // Match just year (e.g., "2024")
+    const yearMatch = dateString.match(/^(\d{4})$/);
+    if (yearMatch) {
+      joinedYear = parseInt(yearMatch[1]);
+      joinedMonth = 1; // Assume January if only year is provided
+    }
+
+    if (joinedYear && joinedMonth) {
+      const totalMonthsJoined = joinedYear * 12 + joinedMonth;
+      const totalMonthsCurrent = currentYear * 12 + currentMonth;
+      const monthsDiff = totalMonthsCurrent - totalMonthsJoined;
+
+      if (monthsDiff < 0) {
+        // Future date, return original
+        return dateString;
+      }
+
+      const years = Math.floor(monthsDiff / 12);
+      const months = monthsDiff % 12;
+
+      if (years > 0 && months > 0) {
+        return `${years} year${years > 1 ? 's' : ''} ${months} month${months > 1 ? 's' : ''}`;
+      } else if (years > 0) {
+        return `${years} year${years > 1 ? 's' : ''}`;
+      } else if (months > 0) {
+        return `${months} month${months > 1 ? 's' : ''}`;
+      }
+    }
+
+    return null;
   }
 
   private generateWarnings(data: ExtractedData): string[] {
@@ -179,6 +344,7 @@ CRITICAL mappings for Malaysian forms:
       phone: null,
       email: null,
       address: null,
+      nationality: null,
       mother_name: null,
       employer_name: null,
       employer_address: null,
@@ -208,19 +374,43 @@ CRITICAL mappings for Malaysian forms:
         data.ic_number = digits[0];
       }
 
-      // Phone numbers
-      if (/contact\s*number|hp\s*number/i.test(lowerLine) && !data.phone) {
+      // Phone numbers - ONLY from HP/Mobile/Tel fields, NOT emergency
+      if ((/^hp\s*[:=]|mobile\s*[:=]|tel\s*[:=]|telephone\s*[:=]/i.test(line) ||
+          (/hp\s*no|mobile\s*no|tel\s*no/i.test(lowerLine) && !/emergency/i.test(lowerLine))) &&
+          !data.phone) {
         data.phone = this.extractPhone(line);
       }
 
+      // Emergency contact phone - ONLY from Emergency fields
+      if ((/emergency/i.test(lowerLine) && (/contact|hp|tel|phone/i.test(lowerLine))) && !data.emergency_phone) {
+        data.emergency_phone = this.extractPhone(line);
+      }
+
+      // Emergency name
+      if (/emergency\s*(full\s*)?name|emergency\s*contact\s*name/i.test(lowerLine) && !data.emergency_name) {
+        data.emergency_name = this.extractAfterColon(line);
+      }
+
+      // Emergency relation
+      if (/emergency\s*relation/i.test(lowerLine) && !data.emergency_relation) {
+        data.emergency_relation = this.extractAfterColon(line);
+      }
+
       // Office phone
-      if (/office\s*number|office\s*[:=]/i.test(lowerLine) && !data.office_phone) {
+      if (/office\s*number|office\s*[:=]|office\s*tel/i.test(lowerLine) && !data.office_phone) {
         data.office_phone = this.extractPhone(line);
       }
 
-      // Email
+      // Personal email (from "Email:" label, NOT work/HR email)
+      if (/^email\s*[:=]/i.test(line) && !data.email) {
+        const emailMatch = line.match(/:\s*([a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,})/i);
+        if (emailMatch) data.email = emailMatch[1];
+      }
+
+      // Fallback email extraction if no "Email:" label found
+      // Only use if not already set and not a work/HR email line
       const emailMatch = line.match(/([a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,})/i);
-      if (emailMatch && !data.email) {
+      if (emailMatch && !data.email && !/work\s*email|hr\s*email|office\s*email/i.test(lowerLine)) {
         data.email = emailMatch[1];
       }
 
@@ -230,8 +420,18 @@ CRITICAL mappings for Malaysian forms:
       }
 
       // Company name
-      if (/company\s*name/i.test(lowerLine) && !data.employer_name) {
+      if (/company\s*name|name\s*employer/i.test(lowerLine) && !data.employer_name) {
         data.employer_name = this.extractAfterColon(line);
+      }
+
+      // Employer/Company address
+      if (/comp\s*address|company\s*address|employer\s*address|address\s*employer/i.test(lowerLine) && !data.employer_address) {
+        data.employer_address = this.extractAfterColon(line);
+      }
+
+      // Mother name
+      if (/mother\s*full?\s*name/i.test(lowerLine) && !data.mother_name) {
+        data.mother_name = this.extractAfterColon(line);
       }
 
       // Position
@@ -240,9 +440,25 @@ CRITICAL mappings for Malaysian forms:
       }
 
       // Date joined / work since
-      if (/date\s*joined|work\s*since|length/i.test(lowerLine) && !data.work_since) {
+      if (/date\s*joined|work\s*since|length|lenght/i.test(lowerLine) && !data.work_since) {
         data.work_since = this.extractAfterColon(line);
       }
+
+      // Work email / HR email
+      if (/work\s*email|hr\s*email/i.test(lowerLine) && !data.work_email) {
+        const emailMatch = line.match(/([a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,})/i);
+        if (emailMatch) data.work_email = emailMatch[1];
+      }
+
+      // Education level
+      if (/education\s*level|education/i.test(lowerLine) && !data.education_level) {
+        data.education_level = this.extractAfterColon(line);
+      }
+    }
+
+    // Infer nationality from address
+    if (data.address) {
+      data.nationality = this.inferNationality(data.address);
     }
 
     // Clean phone numbers
@@ -287,6 +503,7 @@ CRITICAL mappings for Malaysian forms:
       phone: null,
       email: null,
       address: null,
+      nationality: null,
       mother_name: null,
       employer_name: null,
       employer_address: null,
@@ -295,6 +512,7 @@ CRITICAL mappings for Malaysian forms:
       office_phone: null,
       work_since: null,
       work_email: null,
+      education_level: null,
       emergency_name: null,
       emergency_phone: null,
       emergency_relation: null,

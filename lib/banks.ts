@@ -7,7 +7,12 @@ export const BANKS = {
     template: 'muamalat application form.pdf',
     cards: [
       'Visa Platinum-i',
+      'Muamalat Eon Visa Platinum-i',
+      'Muamalat Eon Visa Infinite-i',
       'Visa Infinite-i',
+      'Muamalat Pos Visa Platinum-i',
+      'Muamalat Pos Visa Infinite-i',
+      'Muamalat AmanahRaya Visa Platinum-i',
     ] as const,
   },
   ocbc: {

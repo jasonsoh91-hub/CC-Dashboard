@@ -4,6 +4,24 @@ import { BANKS, BankId } from './banks';
 // Malaysian race options
 const races = ['Malay', 'Chinese', 'Indian', 'Others'] as const;
 const religions = ['Islam', 'Buddhism', 'Christianity', 'Hinduism', 'Others'] as const;
+const malaysianStates = [
+  'Johor',
+  'Kedah',
+  'Kelantan',
+  'Melaka',
+  'Negeri Sembilan',
+  'Pahang',
+  'Perak',
+  'Perlis',
+  'Pulau Pinang',
+  'Sabah',
+  'Sarawak',
+  'Selangor',
+  'Terengganu',
+  'Kuala Lumpur',
+  'Labuan',
+  'Putrajaya',
+] as const;
 const maritalStatuses = ['Single', 'Married', 'Divorced', 'Widowed'] as const;
 const residenceStatuses = ['Owned', 'Rented', 'With Parents', 'Others'] as const;
 const educationLevels = ['SPM', 'STPM', 'Diploma', 'Degree', 'Master', 'PhD', 'Others'] as const;
@@ -73,6 +91,7 @@ export const ExtractedDataSchema = z.object({
   phone: z.string().nullable().optional(),
   email: z.string().email().nullable().optional(),
   address: z.string().nullable().optional(),
+  nationality: z.string().nullable().optional(),
   mother_name: z.string().nullable().optional(),
   employer_name: z.string().nullable().optional(),
   employer_address: z.string().nullable().optional(),
@@ -101,7 +120,7 @@ export const ApplicationFormDataSchema = ExtractedDataSchema.extend({
   date_of_birth: z.string().optional().nullable(), // DD/MM/YYYY
   mother_name: z.string().optional().nullable(),
   race: z.enum(races).optional().nullable(),
-  religion: z.enum(religions).optional().nullable(),
+  religion: z.enum(religions).optional().nullable(), // Bank Muamalat specific
   marital_status: z.enum(maritalStatuses).optional().nullable(),
   hp_number: z.string().optional().nullable(),
   email_address: z.string().optional().nullable().refine((val) => !val || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val), { message: 'Invalid email format' }),
@@ -109,10 +128,38 @@ export const ApplicationFormDataSchema = ExtractedDataSchema.extend({
   residential_address: z.string().optional().nullable(),
   residence_status: z.enum(residenceStatuses).optional().nullable(),
   education_level: z.enum(educationLevels).optional().nullable(),
-  related_to_bmm_staff: z.boolean().optional().nullable(),
+  related_to_bmm_staff: z.boolean().optional().nullable(), // Bank Muamalat specific
   postcode: z.string().optional().nullable(),
   city: z.string().optional().nullable(),
   state: z.string().optional().nullable(),
+
+  // Correspondence Address (separate from residential)
+  correspondence_address: z.string().optional().nullable(),
+  correspondence_city: z.string().optional().nullable(),
+  correspondence_postcode: z.string().optional().nullable(),
+  correspondence_state: z.string().optional().nullable(),
+
+  // OCBC specific fields
+  passport_number: z.string().optional().nullable(),
+  passport_expiry_day: z.string().optional().nullable(),
+  passport_expiry_month: z.string().optional().nullable(),
+  passport_expiry_year: z.string().optional().nullable(),
+  old_nric: z.string().optional().nullable(), // For old NRIC format
+
+  // Additional Personal Details
+  house_tel_no: z.string().optional().nullable(), // House telephone number
+  police_military_id: z.string().optional().nullable(), // Police/Military ID
+
+  // Related to BMMB Staff (if yes)
+  bmm_staff_name: z.string().optional().nullable(),
+  bmm_staff_id: z.string().optional().nullable(),
+  bmm_staff_relationship: z.string().optional().nullable(),
+  bmm_staff_department: z.string().optional().nullable(),
+
+  // Office Address details (separate fields)
+  office_city: z.string().optional().nullable(),
+  office_postcode: z.string().optional().nullable(),
+  office_state: z.string().optional().nullable(),
 
   // Section B: Employment Details
   employer_name: z.string().optional().nullable(),
@@ -125,10 +172,52 @@ export const ApplicationFormDataSchema = ExtractedDataSchema.extend({
   length_of_service: z.string().optional().nullable(),
   employment_sector: z.enum(employmentSectors).optional().nullable(),
   office_address: z.string().optional().nullable(),
+  hr_email: z.string().optional().nullable(), // HR/Work email - required for Malaysian working in Singapore
 
   // Section C: Applicant's Income
   monthly_income: z.string().optional().nullable(),
   other_income_source: z.string().optional().nullable(),
+  monthly_commitment: z.string().optional().nullable(), // Monthly expenses/obligations
+
+  // Supplementary Cardholder (Section F & G)
+  supp_salutation: z.string().optional().nullable(),
+  supp_name: z.string().optional().nullable(),
+  supp_gender: z.enum(['Male', 'Female']).optional().nullable(),
+  supp_nationality: z.string().optional().nullable(),
+  supp_mykad_number: z.string().optional().nullable(),
+  supp_date_of_birth: z.string().optional().nullable(),
+  supp_mother_name: z.string().optional().nullable(),
+  supp_hp_number: z.string().optional().nullable(),
+  supp_name_on_card: z.string().optional().nullable(),
+  supp_residential_address: z.string().optional().nullable(),
+  supp_city: z.string().optional().nullable(),
+  supp_postcode: z.string().optional().nullable(),
+  supp_state: z.string().optional().nullable(),
+  supp_match_principal_address: z.boolean().optional().nullable(),
+  // Supplementary employment (Section G)
+  supp_employer_name: z.string().optional().nullable(),
+  supp_business_classification: z.enum(businessClassifications).optional().nullable(),
+  supp_employment_type: z.enum(employmentTypes).optional().nullable(),
+  supp_relation_to_principal: z.string().optional().nullable(),
+  supp_share_facility: z.boolean().optional().nullable(), // "My Supplementary Cardholder will share my facility limit"
+
+  // Statement & Card Delivery (Section E)
+  statement_delivery_preference: z.enum(['mail', 'email']).optional().nullable(),
+  opt_hardcopy_statement: z.boolean().optional().nullable(), // RM5/month fee
+
+  // Financing (Section I)
+  financing_limit_type: z.enum(['specified', 'unspecified']).optional().nullable(),
+  specified_financing_limit: z.string().optional().nullable(), // RM amount if specified
+
+  // Sales Executive Info (For BMMB Use Only)
+  sales_exec_name: z.string().optional().nullable(),
+  sales_exec_ic: z.string().optional().nullable(),
+  sales_exec_staff_id: z.string().optional().nullable(),
+  sales_exec_email: z.string().optional().nullable(),
+  branch_name: z.string().optional().nullable(),
+  branch_tel_no: z.string().optional().nullable(),
+  branch_manager_name: z.string().optional().nullable(),
+  branch_manager_email: z.string().optional().nullable(),
 
   // Section D: Emergency Contact Details
   emergency_full_name: z.string().optional().nullable(),
@@ -160,6 +249,7 @@ export const dropdownOptions = {
   bank: bankIds as readonly string[],
   race: races as readonly string[],
   religion: religions as readonly string[],
+  state: malaysianStates as readonly string[],
   maritalStatus: maritalStatuses as readonly string[],
   residenceStatus: residenceStatuses as readonly string[],
   educationLevel: educationLevels as readonly string[],
