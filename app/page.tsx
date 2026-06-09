@@ -315,9 +315,8 @@ export default function Dashboard() {
     }
 
     setFormData(prev => {
-      console.log(`[updateField] prev.${field} =`, prev[field], `new value:`, value);
       const updated = { ...prev, [field]: value };
-      console.log(`[updateField] updated.${field} =`, updated[field]);
+      console.log(`[updateField] ${field} updated:`, value);
 
       // Auto-link salutation to gender
       if (field === 'salutation' && typeof value === 'string') {
