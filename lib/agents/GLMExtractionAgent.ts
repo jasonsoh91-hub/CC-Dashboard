@@ -108,13 +108,13 @@ CRITICAL mappings for Malaysian forms:
   }
 
   private cleanData(data: ExtractedData): ExtractedData {
-    const clean = (val: string | null): string | null => {
+    const clean = (val: string | null | undefined): string | null => {
       if (val === null || val === undefined || val === '') return null;
       const trimmed = val.trim();
       return trimmed === '' || trimmed.toLowerCase() === 'null' ? null : trimmed;
     };
 
-    const cleanPhone = (phone: string | null): string | null => {
+    const cleanPhone = (phone: string | null | undefined): string | null => {
       if (!phone) return null;
       return phone.replace(/[^\d]/g, '');
     };

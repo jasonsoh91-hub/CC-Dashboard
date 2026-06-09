@@ -707,7 +707,7 @@ function FormFields({
             <SelectValue placeholder="" />
           </SelectTrigger>
           <SelectContent>
-            {availableCards.map((type) => (
+            {availableCards.map((type: string) => (
               <SelectItem key={type} value={type}>{type}</SelectItem>
             ))}
           </SelectContent>
