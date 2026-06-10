@@ -415,6 +415,15 @@ async function fillBankMuamalatForm(pdfBytes: Buffer, data: ApplicationFormData)
     console.warn('[PDF] Could not update field appearances:', e);
   }
 
+  // Flatten the form to "burn in" the field values
+  // This makes checkboxes visible in all PDF viewers
+  try {
+    form.flatten();
+    console.log('[PDF] Form flattened - checkboxes should now be visible');
+  } catch (e) {
+    console.warn('[PDF] Could not flatten form:', e);
+  }
+
   const filledPdfBytes = await pdfDoc.save();
   console.log('[PDF] PDF saved, size:', filledPdfBytes.length);
   return new Uint8Array(filledPdfBytes);
