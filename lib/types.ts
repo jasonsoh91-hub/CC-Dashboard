@@ -71,9 +71,15 @@ const positions = [
 // Card types (now bank-specific - see lib/banks.ts)
 // All available cards across all banks
 const allCardTypes = [
+  // Bank Muamalat
   'Visa Platinum-i',
   'Visa Infinite-i',
+  'Muamalat Eon Visa Platinum-i',
   'Muamalat Eon Visa Infinite-i',
+  'Muamalat Pos Visa Platinum-i',
+  'Muamalat Pos Visa Infinite-i',
+  'Muamalat AmanahRaya Visa Platinum-i',
+  // OCBC
   '90°N Visa Card',
   'Cashflo Mastercard',
   'Titanium Card (Blue)',
