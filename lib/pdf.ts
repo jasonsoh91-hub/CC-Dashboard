@@ -51,7 +51,15 @@ async function fillBankMuamalatForm(pdfBytes: Buffer, data: ApplicationFormData)
 
   // Debug: List all available fields
   const allFields = form.getFields();
-  console.log('[PDF] Available fields in form:', allFields.map(f => f.getName()).slice(0, 50));
+  const fieldNames = allFields.map(f => f.getName());
+  console.log('[PDF] Total fields in form:', fieldNames.length);
+  console.log('[PDF] All fields in form:', fieldNames);
+
+  // Find gender and nationality related fields
+  const genderFields = fieldNames.filter(n => n.toLowerCase().includes('gender') || n.toLowerCase().includes('male') || n.toLowerCase().includes('female'));
+  const nationalityFields = fieldNames.filter(n => n.toLowerCase().includes('nationality') || n.toLowerCase().includes('malaysia'));
+  console.log('[PDF] Gender-related fields found:', genderFields);
+  console.log('[PDF] Nationality-related fields found:', nationalityFields);
 
   // Helper functions
   const setText = (fieldName: string, value: string | null | undefined) => {
@@ -70,12 +78,22 @@ async function fillBankMuamalatForm(pdfBytes: Buffer, data: ApplicationFormData)
     if (!checked) return;
     try {
       const field = form.getField(fieldName);
+      console.log(`[PDF] Found field "${fieldName}":`, field.constructor.name);
       if (field instanceof PDFCheckBox) {
+        // First uncheck to ensure clean state
+        try {
+          field.uncheck();
+        } catch (e) {
+          // Ignore
+        }
+        // Then check
         field.check();
         console.log(`[PDF] Checked: ${fieldName}`);
+      } else {
+        console.warn(`[PDF] Field "${fieldName}" is not a checkbox, it's a ${field.constructor.name}`);
       }
     } catch (e) {
-      console.warn(`Checkbox not found: ${fieldName}`, e);
+      console.warn(`[PDF] Checkbox not found: "${fieldName}"`, e);
     }
   };
 
@@ -84,9 +102,10 @@ async function fillBankMuamalatForm(pdfBytes: Buffer, data: ApplicationFormData)
       const field = form.getField(fieldName);
       if (field instanceof PDFCheckBox) {
         field.uncheck();
+        console.log(`[PDF] Unchecked: ${fieldName}`);
       }
     } catch (e) {
-      // Ignore
+      // Ignore - field might not exist
     }
   };
 
@@ -124,22 +143,103 @@ async function fillBankMuamalatForm(pdfBytes: Buffer, data: ApplicationFormData)
   setText('Salutation', data.salutation);
   setText('Name', data.name_as_per_ic);
 
-  uncheckField('Male Checkbutton');
-  uncheckField('Female Checkbutton');
-  console.log('[PDF] Setting gender:', data.gender);
-  if (data.gender === 'Male') {
-    setCheck('Male Checkbutton', true);
-  } else if (data.gender === 'Female') {
-    setCheck('Female Checkbutton', true);
+  console.log('[PDF] ==================== GENDER ====================');
+  console.log('[PDF] Raw gender value:', data.gender, '(type:', typeof data.gender + ')');
+  // First, clear both checkboxes manually
+  try {
+    const maleField = form.getField('Male Checkbutton');
+    if (maleField instanceof PDFCheckBox) {
+      maleField.uncheck();
+      console.log('[PDF] Unchecked Male Checkbutton manually');
+    }
+  } catch (e) {
+    console.warn('[PDF] Could not uncheck Male:', e);
+  }
+  try {
+    const femaleField = form.getField('Female Checkbutton');
+    if (femaleField instanceof PDFCheckBox) {
+      femaleField.uncheck();
+      console.log('[PDF] Unchecked Female Checkbutton manually');
+    }
+  } catch (e) {
+    console.warn('[PDF] Could not uncheck Female:', e);
   }
 
-  uncheckField('Nationality - Malaysia');
-  uncheckField('Nationality - Others');
-  console.log('[PDF] Setting nationality:', data.nationality);
-  if (data.nationality?.toLowerCase() === 'malaysian') {
-    setCheck('Nationality - Malaysia', true);
+  // Now check the appropriate one
+  if (data.gender === 'Male') {
+    console.log('[PDF] Checking Male Checkbutton');
+    try {
+      const maleField = form.getField('Male Checkbutton');
+      if (maleField instanceof PDFCheckBox) {
+        maleField.check();
+        console.log('[PDF] SUCCESS: Male checkbox checked');
+      }
+    } catch (e) {
+      console.error('[PDF] ERROR checking Male:', e);
+    }
+  } else if (data.gender === 'Female') {
+    console.log('[PDF] Checking Female Checkbutton');
+    try {
+      const femaleField = form.getField('Female Checkbutton');
+      if (femaleField instanceof PDFCheckBox) {
+        femaleField.check();
+        console.log('[PDF] SUCCESS: Female checkbox checked');
+      }
+    } catch (e) {
+      console.error('[PDF] ERROR checking Female:', e);
+    }
   } else {
-    setCheck('Nationality - Others', true);
+    console.log('[PDF] No gender match found for:', data.gender);
+  }
+
+  console.log('[PDF] ==================== NATIONALITY ====================');
+  console.log('[PDF] Raw nationality value:', data.nationality, '(type:', typeof data.nationality + ')');
+  const nationalityLower = String(data.nationality || '').toLowerCase().trim();
+  console.log('[PDF] Normalized nationality:', nationalityLower);
+
+  // First, clear both checkboxes manually
+  try {
+    const malaysiaField = form.getField('Nationality - Malaysia');
+    if (malaysiaField instanceof PDFCheckBox) {
+      malaysiaField.uncheck();
+      console.log('[PDF] Unchecked Nationality - Malaysia manually');
+    }
+  } catch (e) {
+    console.warn('[PDF] Could not uncheck Malaysia:', e);
+  }
+  try {
+    const othersField = form.getField('Nationality - Others');
+    if (othersField instanceof PDFCheckBox) {
+      othersField.uncheck();
+      console.log('[PDF] Unchecked Nationality - Others manually');
+    }
+  } catch (e) {
+    console.warn('[PDF] Could not uncheck Others:', e);
+  }
+
+  // Now check the appropriate one
+  if (nationalityLower === 'malaysian' || nationalityLower === 'malaysia') {
+    console.log('[PDF] Checking Nationality - Malaysia');
+    try {
+      const malaysiaField = form.getField('Nationality - Malaysia');
+      if (malaysiaField instanceof PDFCheckBox) {
+        malaysiaField.check();
+        console.log('[PDF] SUCCESS: Malaysia checkbox checked');
+      }
+    } catch (e) {
+      console.error('[PDF] ERROR checking Malaysia:', e);
+    }
+  } else {
+    console.log('[PDF] Checking Nationality - Others');
+    try {
+      const othersField = form.getField('Nationality - Others');
+      if (othersField instanceof PDFCheckBox) {
+        othersField.check();
+        console.log('[PDF] SUCCESS: Others checkbox checked');
+      }
+    } catch (e) {
+      console.error('[PDF] ERROR checking Others:', e);
+    }
     setText('Others - Nationality', data.nationality);
   }
 
@@ -296,7 +396,27 @@ async function fillBankMuamalatForm(pdfBytes: Buffer, data: ApplicationFormData)
   setText('Main Name', data.name_as_per_ic);
   setText('Main Date', today);
 
+  // Before saving, verify checkboxes are set
+  try {
+    const maleCheck = form.getField('Male Checkbutton');
+    console.log('[PDF] Final state - Male checkbox checked:', (maleCheck as any)?.isChecked?.());
+  } catch (e) { }
+
+  try {
+    const malaysiaCheck = form.getField('Nationality - Malaysia');
+    console.log('[PDF] Final state - Malaysia checkbox checked:', (malaysiaCheck as any)?.isChecked?.());
+  } catch (e) { }
+
+  // Update field appearances to ensure checkboxes are visible
+  try {
+    form.updateFieldAppearances();
+    console.log('[PDF] Field appearances updated');
+  } catch (e) {
+    console.warn('[PDF] Could not update field appearances:', e);
+  }
+
   const filledPdfBytes = await pdfDoc.save();
+  console.log('[PDF] PDF saved, size:', filledPdfBytes.length);
   return new Uint8Array(filledPdfBytes);
 }
 
