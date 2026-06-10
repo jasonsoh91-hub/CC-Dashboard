@@ -98,6 +98,27 @@ GOOGLE_API_KEY=xxx              # Optional: for Gemini fallback
 2. **Form Flattening** - Not compatible with this PDF template, caused errors
 3. **Field Names** - Must match exactly as in PDF template (case-sensitive)
 
+## Recent Work Completed (Session 2 - 2025-06-10)
+
+### 1. Fixed Card Type Validation ✅
+**Problem:** 5 out of 7 Bank Muamalat card types were failing PDF generation due to Zod validation errors.
+
+**Solution:** Updated `lib/types.ts` to include all 7 Bank Muamalat cards in the `allCardTypes` array.
+
+**Cards Added:**
+- Muamalat Eon Visa Platinum-i
+- Muamalat Pos Visa Platinum-i
+- Muamalat Pos Visa Infinite-i
+- Muamalat AmanahRaya Visa Platinum-i
+
+### 2. Location Field Sanitization ✅
+**Added:** `sanitizeLocation()` helper function in `lib/pdf.ts` that removes commas from City, Postcode, and State fields.
+
+**Applied to:**
+- Residential address: Postcode, City, State
+- Correspondence address: Postcode, City, State
+- Office address: Postcode, City, State
+
 ## Next Session Tasks
 
 [Add your tasks here]
