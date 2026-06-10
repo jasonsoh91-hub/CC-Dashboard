@@ -45,7 +45,11 @@ async function fillOCBCForm(pdfBytes: Buffer, data: ApplicationFormData): Promis
 
 // Bank Muamalat form filling
 async function fillBankMuamalatForm(pdfBytes: Buffer, data: ApplicationFormData): Promise<Uint8Array> {
-  const pdfDoc = await PDFDocument.load(pdfBytes);
+  // Load PDF with options to handle complex forms
+  const pdfDoc = await PDFDocument.load(pdfBytes, {
+    ignoreEncryption: true,
+    updateMetadata: false
+  });
   const form = pdfDoc.getForm();
   console.log('[PDF] Bank Muamalat form loaded');
 
@@ -417,14 +421,7 @@ async function fillBankMuamalatForm(pdfBytes: Buffer, data: ApplicationFormData)
     console.log('[PDF] Final state - Others checkbox checked:', (othersCheck as any)?.isChecked?.());
   } catch (e) { }
 
-  // Update field appearances to ensure checkboxes are visible
-  try {
-    form.updateFieldAppearances();
-    console.log('[PDF] Field appearances updated successfully');
-  } catch (e) {
-    console.warn('[PDF] Could not update field appearances:', e);
-  }
-
+  console.log('[PDF] Saving PDF without appearance updates (to avoid corruption)...');
   const filledPdfBytes = await pdfDoc.save();
   console.log('[PDF] PDF saved, size:', filledPdfBytes.length);
   return new Uint8Array(filledPdfBytes);
