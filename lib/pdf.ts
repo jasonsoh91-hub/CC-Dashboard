@@ -403,25 +403,26 @@ async function fillBankMuamalatForm(pdfBytes: Buffer, data: ApplicationFormData)
   } catch (e) { }
 
   try {
+    const femaleCheck = form.getField('Female Checkbutton');
+    console.log('[PDF] Final state - Female checkbox checked:', (femaleCheck as any)?.isChecked?.());
+  } catch (e) { }
+
+  try {
     const malaysiaCheck = form.getField('Nationality - Malaysia');
     console.log('[PDF] Final state - Malaysia checkbox checked:', (malaysiaCheck as any)?.isChecked?.());
+  } catch (e) { }
+
+  try {
+    const othersCheck = form.getField('Nationality - Others');
+    console.log('[PDF] Final state - Others checkbox checked:', (othersCheck as any)?.isChecked?.());
   } catch (e) { }
 
   // Update field appearances to ensure checkboxes are visible
   try {
     form.updateFieldAppearances();
-    console.log('[PDF] Field appearances updated');
+    console.log('[PDF] Field appearances updated successfully');
   } catch (e) {
     console.warn('[PDF] Could not update field appearances:', e);
-  }
-
-  // Flatten the form to "burn in" the field values
-  // This makes checkboxes visible in all PDF viewers
-  try {
-    form.flatten();
-    console.log('[PDF] Form flattened - checkboxes should now be visible');
-  } catch (e) {
-    console.warn('[PDF] Could not flatten form:', e);
   }
 
   const filledPdfBytes = await pdfDoc.save();
