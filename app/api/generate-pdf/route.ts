@@ -10,6 +10,7 @@ export async function POST(request: NextRequest) {
     console.log('[PDF API] employer_name:', body.employer_name);
     console.log('[PDF API] bank_id:', body.bank_id);
     console.log('[PDF API] agree_tawarruq:', body.agree_tawarruq);
+    console.log('[PDF API] gender:', body.gender, 'nationality:', body.nationality);
 
     // Validate the incoming data
     const validatedData = ApplicationFormDataSchema.parse(body);

@@ -345,7 +345,31 @@ export default function Dashboard() {
         const address = updated.residential_address || prev.residential_address;
         const isMalaysianAddress = address && isMalaysianAddressCheck(address);
 
-        if (hasMalaysianIC && isMalaysianAddress) {
+        // Auto-fill from MyKad when mykad_number is updated
+        if (field === 'mykad_number' && value) {
+          const cleanIc = value.replace(/[^0-9]/g, '');
+          if (cleanIc.length === 12) {
+            // Extract date of birth from MyKad (YYMMDD format)
+            const year = parseInt(cleanIc.substring(0, 2));
+            const month = cleanIc.substring(2, 4);
+            const day = cleanIc.substring(4, 6);
+            const fullYear = year > 30 ? `19${year}` : `20${year}`;
+            updated.date_of_birth = `${day}/${month}/${fullYear}`;
+            console.log('[MyKad] Auto-filled date_of_birth:', updated.date_of_birth);
+
+            // Extract gender from last digit (odd=male, even=female)
+            const lastDigit = parseInt(cleanIc.charAt(11));
+            updated.gender = (lastDigit % 2 === 1) ? 'Male' : 'Female';
+            console.log('[MyKad] Auto-filled gender:', updated.gender);
+
+            // Set nationality as Malaysian for 12-digit IC
+            updated.nationality = 'Malaysian';
+            console.log('[MyKad] Auto-filled nationality: Malaysian');
+          }
+        }
+
+        // Only set nationality to Malaysian if we have both IC and address
+        if (hasMalaysianIC && isMalaysianAddress && !updated.nationality) {
           updated.nationality = 'Malaysian';
           console.log('[Nationality] Malaysian IC + Malaysian Address detected → Nationality: Malaysian');
         }

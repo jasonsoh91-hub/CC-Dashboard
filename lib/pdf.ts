@@ -121,6 +121,7 @@ async function fillBankMuamalatForm(pdfBytes: Buffer, data: ApplicationFormData)
 
   uncheckField('Male Checkbutton');
   uncheckField('Female Checkbutton');
+  console.log('[PDF] Setting gender:', data.gender);
   if (data.gender === 'Male') {
     setCheck('Male Checkbutton', true);
   } else if (data.gender === 'Female') {
@@ -129,6 +130,7 @@ async function fillBankMuamalatForm(pdfBytes: Buffer, data: ApplicationFormData)
 
   uncheckField('Nationality - Malaysia');
   uncheckField('Nationality - Others');
+  console.log('[PDF] Setting nationality:', data.nationality);
   if (data.nationality?.toLowerCase() === 'malaysian') {
     setCheck('Nationality - Malaysia', true);
   } else {
