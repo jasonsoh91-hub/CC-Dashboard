@@ -73,6 +73,7 @@ const positions = [
 const allCardTypes = [
   'Visa Platinum-i',
   'Visa Infinite-i',
+  'Muamalat Eon Visa Infinite-i',
   '90°N Visa Card',
   'Cashflo Mastercard',
   'Titanium Card (Blue)',
