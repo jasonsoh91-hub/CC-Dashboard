@@ -68,6 +68,12 @@ async function fillBankMuamalatForm(pdfBytes: Buffer, data: ApplicationFormData)
     }
   };
 
+  // Remove commas from city, postcode, state fields
+  const sanitizeLocation = (value: string | null | undefined): string => {
+    if (!value) return '';
+    return String(value).replace(/,/g, '').trim();
+  };
+
   const setCheck = (fieldName: string, checked: boolean) => {
     if (!checked) return;
     try {
@@ -168,18 +174,18 @@ async function fillBankMuamalatForm(pdfBytes: Buffer, data: ApplicationFormData)
 
   // Use explicit fields if provided, otherwise parse from address
   const { postcode, city, state } = parseMalaysianAddress(address);
-  setText('Postcode', data.postcode || postcode);
-  setText('City', data.city || city);
-  setText('State', data.state || state);
+  setText('Postcode', sanitizeLocation(data.postcode || postcode));
+  setText('City', sanitizeLocation(data.city || city));
+  setText('State', sanitizeLocation(data.state || state));
 
   // Correspondence Address (if different from residential)
   if (data.correspondence_address) {
     const corrAddressLines = splitAddress(data.correspondence_address, 2);
     setText('Correspondence Address 1', corrAddressLines[0]);
     setText('Correspondence Address 2', corrAddressLines[1]);
-    setText('Correspondence Postcode', data.correspondence_postcode);
-    setText('Correspondence City', data.correspondence_city);
-    setText('Correspondence State', data.correspondence_state);
+    setText('Correspondence Postcode', sanitizeLocation(data.correspondence_postcode));
+    setText('Correspondence City', sanitizeLocation(data.correspondence_city));
+    setText('Correspondence State', sanitizeLocation(data.correspondence_state));
   }
 
   setText('Education Level', data.education_level);
@@ -215,9 +221,9 @@ async function fillBankMuamalatForm(pdfBytes: Buffer, data: ApplicationFormData)
 
   // Use explicit fields if provided, otherwise parse from address
   const officeParsed = parseMalaysianAddress(officeAddress);
-  setText('Office Postcode', data.office_postcode || officeParsed.postcode);
-  setText('Office City', data.office_city || officeParsed.city);
-  setText('Office State', data.office_state || officeParsed.state);
+  setText('Office Postcode', sanitizeLocation(data.office_postcode || officeParsed.postcode));
+  setText('Office City', sanitizeLocation(data.office_city || officeParsed.city));
+  setText('Office State', sanitizeLocation(data.office_state || officeParsed.state));
 
   // ==================== C. APPLICANT'S INCOME ====================
   setText('Monthly Income', data.monthly_income);
