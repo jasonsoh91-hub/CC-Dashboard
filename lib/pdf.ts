@@ -49,6 +49,10 @@ async function fillBankMuamalatForm(pdfBytes: Buffer, data: ApplicationFormData)
   const form = pdfDoc.getForm();
   console.log('[PDF] Bank Muamalat form loaded');
 
+  // Debug: List all available fields
+  const allFields = form.getFields();
+  console.log('[PDF] Available fields in form:', allFields.map(f => f.getName()).slice(0, 50));
+
   // Helper functions
   const setText = (fieldName: string, value: string | null | undefined) => {
     if (!value) return;
@@ -68,9 +72,10 @@ async function fillBankMuamalatForm(pdfBytes: Buffer, data: ApplicationFormData)
       const field = form.getField(fieldName);
       if (field instanceof PDFCheckBox) {
         field.check();
+        console.log(`[PDF] Checked: ${fieldName}`);
       }
     } catch (e) {
-      console.warn(`Checkbox not found: ${fieldName}`);
+      console.warn(`Checkbox not found: ${fieldName}`, e);
     }
   };
 
