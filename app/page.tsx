@@ -339,14 +339,16 @@ export default function Dashboard() {
       }
 
       // Auto-detect nationality from Malaysian IC + Malaysian address
-      // Check if we have both Malaysian IC and Malaysian address
-      const hasMalaysianIC = (updated.mykad_number || prev.mykad_number) && (updated.mykad_number || prev.mykad_number)!.replace(/[^0-9]/g, '').length === 12;
-      const address = updated.residential_address || prev.residential_address;
-      const isMalaysianAddress = address && isMalaysianAddressCheck(address);
+      // Only run when mykad_number or residential_address is being updated
+      if (field === 'mykad_number' || field === 'residential_address') {
+        const hasMalaysianIC = (updated.mykad_number || prev.mykad_number) && (updated.mykad_number || prev.mykad_number)!.replace(/[^0-9]/g, '').length === 12;
+        const address = updated.residential_address || prev.residential_address;
+        const isMalaysianAddress = address && isMalaysianAddressCheck(address);
 
-      if (hasMalaysianIC && isMalaysianAddress) {
-        updated.nationality = 'Malaysian';
-        console.log('[Nationality] Malaysian IC + Malaysian Address detected → Nationality: Malaysian');
+        if (hasMalaysianIC && isMalaysianAddress) {
+          updated.nationality = 'Malaysian';
+          console.log('[Nationality] Malaysian IC + Malaysian Address detected → Nationality: Malaysian');
+        }
       }
 
       return updated;
