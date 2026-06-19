@@ -12,11 +12,80 @@ export async function POST(request: NextRequest) {
     console.log('[PDF API] agree_tawarruq:', body.agree_tawarruq);
     console.log('[PDF API] gender:', body.gender, 'nationality:', body.nationality);
 
-    // Validate the incoming data
-    const validatedData = ApplicationFormDataSchema.parse(body);
+    // Normalize education_level: map common AI-extracted variants to valid enum values
+    if (body.education_level) {
+      const eduMap: Record<string, string> = {
+        'mba': 'Master',
+        'master\'s': 'Master',
+        'masters': 'Master',
+        'msc': 'Master',
+        'master of business administration': 'Master',
+        'phd': 'PhD',
+        'doctorate': 'PhD',
+        'bachelor': 'Degree',
+        'bachelor\'s': 'Degree',
+        'degree': 'Degree',
+        'diploma': 'Diploma',
+        'stpm': 'STPM',
+        'spm': 'SPM',
+      };
+      const validLevels = ['SPM', 'STPM', 'Diploma', 'Degree', 'Master', 'PhD', 'Others'];
+      const raw = String(body.education_level).trim();
+      if (!validLevels.includes(raw)) {
+        body.education_level = eduMap[raw.toLowerCase()] ?? 'Others';
+      }
+    }
+
+    // Validate the incoming data. If any field fails validation, blank it
+    // out and retry — so PDF export never gets stuck on a bad field.
+    const sanitizeAndParse = (input: any) => {
+      const working = { ...input };
+      const blanked: string[] = [];
+      const MAX_ITER = 25;
+
+      for (let i = 0; i < MAX_ITER; i++) {
+        const result = ApplicationFormDataSchema.safeParse(working);
+        if (result.success) {
+          return { data: result.data, blanked };
+        }
+
+        const issues = result.error.issues;
+        if (!issues.length) break;
+
+        let removedSomething = false;
+        for (const issue of issues) {
+          const path = issue.path;
+          if (!path.length) continue;
+          const topKey = String(path[0]);
+          if (working[topKey] !== undefined && working[topKey] !== null) {
+            working[topKey] = null;
+            if (!blanked.includes(topKey)) blanked.push(topKey);
+            removedSomething = true;
+          }
+        }
+
+        if (!removedSomething) {
+          // Drop any remaining offending keys outright to break the loop
+          for (const issue of issues) {
+            const topKey = String(issue.path[0] ?? '');
+            if (topKey) delete working[topKey];
+          }
+        }
+      }
+
+      // Final fallback: strip schema and accept whatever survives
+      const final = ApplicationFormDataSchema.partial().safeParse(working);
+      if (final.success) return { data: final.data, blanked };
+      return { data: working, blanked };
+    };
+
+    const { data: validatedData, blanked } = sanitizeAndParse(body);
+    if (blanked.length) {
+      console.warn('[PDF API] Blanked invalid fields before export:', blanked);
+    }
 
     // Generate the PDF
-    const pdfBytes = await fillPdfForm(validatedData);
+    const pdfBytes = await fillPdfForm(validatedData as any);
 
     // Return the PDF as a downloadable file
     return new NextResponse(Buffer.from(pdfBytes), {
