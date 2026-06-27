@@ -26,7 +26,7 @@ const maritalStatuses = ['Single', 'Married', 'Divorced', 'Others'] as const;
 const residenceStatuses = ['Owned', 'Rented', 'With Parents', 'Others'] as const;
 const educationLevels = ['Primary Education', 'Secondary Education', 'Diploma', 'Degree', 'Masters', 'Doctorate', 'Professional Qualification'] as const;
 const employmentStatuses = ['Permanent', 'Contract', 'Pensioner', 'Part Timer', 'Others'] as const;
-const businessClassifications = ['Private Limited', 'Limited', 'Partnership', 'Public Listed', 'Multinational', 'Government', 'Sole Proprietorship', 'Others'] as const;
+const businessClassifications = ['Private Limited', 'Limited', 'Partnership', 'Public Listed', 'Multinational Corporation', 'Government', 'Sole Proprietorship', 'Others'] as const;
 const employmentTypes = ['Employer', 'Government Employee', 'Private Employee', 'Self Employed'] as const;
 const employmentSectors = ['Banking', 'Education', 'Healthcare', 'Manufacturing', 'Retail', 'Services', 'Technology', 'Others'] as const;
 
