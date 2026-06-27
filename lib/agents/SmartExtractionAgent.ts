@@ -23,24 +23,36 @@ Extract information from this text and return ONLY valid JSON.
 Text to process:
 ${rawText}
 
-Return this exact JSON structure (null for missing fields):
+Return this exact JSON structure (null for missing fields). BE TOLERANT OF TYPOS in field labels (e.g., "Naem"="Name", "Emial"="Email", "Adress"="Address", "Comapny"="Company", "Postion"="Position", "Religon"="Religion", "Maried"="Married", "Maly"="Malay", "Bechelors"="Bachelors"):
 {
   "name": "applicant name",
+  "salutation": "title - MUST be one of: 'Dr', 'Haji', 'Hajjah', 'Mr', 'Mrs', 'Ms', 'Prof'. null if missing",
+  "gender": "MUST be 'Male' or 'Female'. Infer from salutation/name only if explicitly hinted (Mr/Encik=Male, Mrs/Ms/Puan/Cik=Female). Otherwise null",
+  "date_of_birth": "DOB in DD/MM/YYYY format. Can derive from IC: first 6 digits of 12-digit Malaysian IC = YYMMDD (YY 00-30 → 20YY, else 19YY)",
   "ic_number": "12-digit IC number (digits only)",
   "phone": "APPLICANT'S mobile phone ONLY - from 'HP:', 'HP No:', 'Mobile:', 'Mobile No:', 'Tel:' - DO NOT extract emergency contact numbers",
   "email": "PERSONAL email address from 'Email:' field (NOT work/HR email)",
   "address": "residential address",
   "nationality": "nationality - infer 'Malaysian' if address contains Malaysian states (Johor, Kedah, Kelantan, Melaka, Negeri Sembilan, Pahang, Perak, Perlis, Pulau Pinang, Sabah, Sarawak, Selangor, Terengganu, Kuala Lumpur, Labuan, Putrajaya) or Malaysian postcodes, otherwise 'Singaporean' for Singapore addresses",
+  "race": "MUST be one of: 'Malay', 'Chinese', 'Indian', 'Punjabi', 'Others'. Normalize typos: 'Maly'/'Melayu'→'Malay', 'Chinise'/'Cina'→'Chinese', 'Indien'/'India'→'Indian'",
+  "religion": "MUST be one of: 'Islam', 'Christian', 'Buddhist', 'Hindu', 'Sikhism', 'Atheist', 'Others'. Normalize: 'Muslim'/'Islamic'→'Islam', 'Christianity'/'Kristian'/'Catholic'/'Protestant'→'Christian', 'Buddhism'/'Buddha'→'Buddhist', 'Hinduism'/'Hindu'→'Hindu', 'Sikh'→'Sikhism', 'No religion'/'None'→'Atheist'",
+  "marital_status": "MUST be one of: 'Single', 'Married', 'Divorced', 'Others'. Normalize typos: 'Maried'/'Marred'→'Married', 'Singel'→'Single', 'Divored'/'Divorce'→'Divorced'. 'Widowed' maps to 'Others'",
   "residence_status": "residential status - MUST be one of: 'Owned', 'Rented', 'With Parents', 'Others'. Convert: 'Own' → 'Owned', 'Rent' → 'Rented'",
+  "education_level": "education level - MUST be one of: 'Primary Education', 'Secondary Education', 'Diploma', 'Degree', 'Masters', 'Doctorate', 'Professional Qualification'. Normalize: SPM/STPM/high school→'Secondary Education', Bachelor/Bachelors/Bechelors→'Degree', Master/MBA/MSc→'Masters', PhD/Dr→'Doctorate', ACCA/CFA/professional cert→'Professional Qualification'",
+  "name_on_card": "name to be embossed on card - usually same as name unless explicitly different",
   "mother_name": "mother's maiden name",
   "employer_name": "company/employer name from 'Company name:' field",
   "employer_address": "office address from 'Company address:' field",
-  "position": "job position from 'Position:' field - EXPAND abbreviations: MD=Managing Director, GM=General Manager, CEO=Chief Executive Officer",
+  "position": "job position from 'Position:' field - EXPAND abbreviations: MD=Managing Director, GM=General Manager, CEO=Chief Executive Officer, CFO=Chief Financial Officer, COO=Chief Operating Officer, CTO=Chief Technology Officer, snr/sr=Senior, jr=Junior, engr=Engineer, mgr=Manager, exec=Executive, asst=Assistant, sup=Supervisor",
   "occupation": "occupation type from 'Occupation:' or 'Nature of business:' field",
   "office_phone": "office phone from 'Office Number:' field (digits only)",
   "work_since": "length of service - extract the raw date value (e.g., 'June 2024', 'January 2023', '06/2024')",
   "work_email": "HR/Work email from 'HR Email:' or 'Work Email:' field - this is SEPARATE from personal email",
-  "education_level": "education level from 'Education Level:' or 'Education:' field - (Primary Education, Secondary Education, Diploma, Degree, Masters, Doctorate, Professional Qualification)",
+  "employment_status": "MUST be one of: 'Permanent', 'Contract', 'Pensioner', 'Part Timer', 'Others'. Normalize: 'Permanant'→'Permanent', 'Contractor'→'Contract', 'Pension'/'Retired'→'Pensioner', 'Part-time'/'Parttime'→'Part Timer'",
+  "business_classification": "MUST be one of: 'Private Limited', 'Limited', 'Partnership', 'Public Listed', 'Multinational Corporation', 'Government', 'Sole Proprietorship', 'Others'. Normalize: 'Sdn Bhd'/'Pte Ltd'/'Private'→'Private Limited', 'Bhd'/'Public'→'Public Listed', 'MNC'/'Multinational'→'Multinational Corporation', 'Govt'/'Civil Service'→'Government', 'Sole Prop'/'Sole-prop'→'Sole Proprietorship'",
+  "employment_type": "MUST be one of: 'Employer', 'Government Employee', 'Private Employee', 'Self Employed'. Normalize: 'Owner'/'Founder'/'Director'→'Employer', 'Govt Employee'/'Civil Servant'→'Government Employee', 'Salaried'/'Employee'→'Private Employee', 'Freelance'/'Self-Employed'/'Self-emp'→'Self Employed'",
+  "monthly_income": "monthly income in RM - DIGITS ONLY (strip 'RM', commas, decimals). e.g., 'RM 12,000' → '12000', 'RM5500.00' → '5500'",
+  "monthly_commitment": "monthly commitment/expenses in RM - DIGITS ONLY (same formatting as monthly_income)",
   "emergency_name": "emergency contact name - from 'Emergency Name:', 'Emergency Contact Name:'",
   "emergency_phone": "emergency contact phone - from 'Emergency Contact:', 'Emergency Contact No:', 'Emergency Tel:' ONLY - DO NOT use applicant's HP number",
   "emergency_relation": "relationship to emergency contact"
@@ -129,6 +141,145 @@ Return ONLY the JSON object, no explanation text, no markdown formatting.`;
       return phone.replace(/[^\d]/g, '');
     };
 
+    const matchEnum = (val: string | null, enumList: string[]): string | null => {
+      if (!val) return null;
+      const v = val.toString().trim();
+      if (!v) return null;
+      const lower = v.toLowerCase();
+      // exact case-insensitive match first
+      const exact = enumList.find(e => e.toLowerCase() === lower);
+      if (exact) return exact;
+      // substring match
+      const sub = enumList.find(e => lower.includes(e.toLowerCase()) || e.toLowerCase().includes(lower));
+      return sub || null;
+    };
+
+    const normalizeRace = (val: string | null): string | null => {
+      if (!val) return null;
+      const v = val.toString().toLowerCase().trim();
+      if (['maly', 'melayu', 'malay'].includes(v)) return 'Malay';
+      if (['chinise', 'cina', 'chinese', 'cinese'].includes(v)) return 'Chinese';
+      if (['indien', 'india', 'indian'].includes(v)) return 'Indian';
+      if (['punjabi', 'punjab'].includes(v)) return 'Punjabi';
+      return matchEnum(val, ['Malay', 'Chinese', 'Indian', 'Punjabi', 'Others']) || 'Others';
+    };
+
+    const normalizeReligion = (val: string | null): string | null => {
+      if (!val) return null;
+      const v = val.toString().toLowerCase().trim();
+      if (['muslim', 'islam', 'islamic'].includes(v)) return 'Islam';
+      if (['christianity', 'christian', 'kristian', 'catholic', 'protestant'].includes(v)) return 'Christian';
+      if (['buddhism', 'buddha', 'buddhist', 'budha'].includes(v)) return 'Buddhist';
+      if (['hinduism', 'hindu', 'hindi'].includes(v)) return 'Hindu';
+      if (['sikh', 'sikhism'].includes(v)) return 'Sikhism';
+      if (['none', 'no religion', 'atheist', 'atheism'].includes(v)) return 'Atheist';
+      return matchEnum(val, ['Islam', 'Christian', 'Buddhist', 'Hindu', 'Sikhism', 'Atheist', 'Others']) || 'Others';
+    };
+
+    const normalizeMarital = (val: string | null): string | null => {
+      if (!val) return null;
+      const v = val.toString().toLowerCase().trim();
+      if (['singel', 'single'].includes(v)) return 'Single';
+      if (['maried', 'marred', 'married'].includes(v)) return 'Married';
+      if (['divored', 'divorce', 'divorced'].includes(v)) return 'Divorced';
+      if (['widowed', 'widow'].includes(v)) return 'Others';
+      return matchEnum(val, ['Single', 'Married', 'Divorced', 'Others']) || 'Others';
+    };
+
+    const normalizeEducation = (val: string | null): string | null => {
+      if (!val) return null;
+      const v = val.toString().toLowerCase().trim();
+      if (v.includes('primary')) return 'Primary Education';
+      if (v.includes('secondary') || v.includes('spm') || v.includes('stpm') || v.includes('high school') || v.includes('o-level') || v.includes('a-level')) return 'Secondary Education';
+      if (v.includes('diploma')) return 'Diploma';
+      if (v.includes('phd') || v.includes('doctor') || v.includes('doctorate')) return 'Doctorate';
+      if (v.includes('master') || v.includes('mba') || v.includes('msc')) return 'Masters';
+      if (v.includes('professional') || v.includes('acca') || v.includes('cfa') || v.includes('cpa') || v.includes('aca')) return 'Professional Qualification';
+      if (v.includes('degree') || v.includes('bachelor') || v.includes('bechelor') || v.includes('bsc') || v.includes('ba ')) return 'Degree';
+      return matchEnum(val, ['Primary Education', 'Secondary Education', 'Diploma', 'Degree', 'Masters', 'Doctorate', 'Professional Qualification']);
+    };
+
+    const normalizeEmpStatus = (val: string | null): string | null => {
+      if (!val) return null;
+      const v = val.toString().toLowerCase().trim();
+      if (v.includes('permanent') || v.includes('permanant')) return 'Permanent';
+      if (v.includes('contract')) return 'Contract';
+      if (v.includes('pension') || v.includes('retire')) return 'Pensioner';
+      if (v.includes('part')) return 'Part Timer';
+      return matchEnum(val, ['Permanent', 'Contract', 'Pensioner', 'Part Timer', 'Others']) || 'Others';
+    };
+
+    const normalizeBusinessClass = (val: string | null): string | null => {
+      if (!val) return null;
+      const v = val.toString().toLowerCase().trim();
+      if (v.includes('sdn bhd') || v.includes('pte ltd') || v.includes('private limited')) return 'Private Limited';
+      if (v.includes('public listed') || v === 'bhd' || v.includes('public')) return 'Public Listed';
+      if (v.includes('mnc') || v.includes('multinational')) return 'Multinational Corporation';
+      if (v.includes('govt') || v.includes('government') || v.includes('civil service')) return 'Government';
+      if (v.includes('sole prop')) return 'Sole Proprietorship';
+      if (v.includes('partnership')) return 'Partnership';
+      if (v === 'limited' || v === 'ltd') return 'Limited';
+      return matchEnum(val, ['Private Limited', 'Limited', 'Partnership', 'Public Listed', 'Multinational Corporation', 'Government', 'Sole Proprietorship', 'Others']) || 'Others';
+    };
+
+    const normalizeEmpType = (val: string | null): string | null => {
+      if (!val) return null;
+      const v = val.toString().toLowerCase().trim();
+      if (v.includes('owner') || v.includes('founder') || v.includes('director') || v === 'employer') return 'Employer';
+      if (v.includes('government') || v.includes('govt') || v.includes('civil')) return 'Government Employee';
+      if (v.includes('self') || v.includes('freelance')) return 'Self Employed';
+      if (v.includes('private') || v.includes('salaried') || v.includes('employee')) return 'Private Employee';
+      return matchEnum(val, ['Employer', 'Government Employee', 'Private Employee', 'Self Employed']);
+    };
+
+    const normalizeGender = (val: string | null): string | null => {
+      if (!val) return null;
+      const v = val.toString().toLowerCase().trim();
+      if (['m', 'male', 'lelaki'].includes(v)) return 'Male';
+      if (['f', 'female', 'perempuan'].includes(v)) return 'Female';
+      return null;
+    };
+
+    const normalizeSalutation = (val: string | null): string | null => {
+      if (!val) return null;
+      const v = val.toString().trim();
+      const map: Record<string, string> = {
+        'dr': 'Dr', 'dr.': 'Dr',
+        'haji': 'Haji', 'hj': 'Haji', 'hj.': 'Haji',
+        'hajjah': 'Hajjah', 'hjh': 'Hajjah', 'hjh.': 'Hajjah',
+        'mr': 'Mr', 'mr.': 'Mr', 'en': 'Mr', 'encik': 'Mr',
+        'mrs': 'Mrs', 'mrs.': 'Mrs', 'pn': 'Mrs', 'puan': 'Mrs',
+        'ms': 'Ms', 'ms.': 'Ms', 'cik': 'Ms',
+        'prof': 'Prof', 'prof.': 'Prof', 'professor': 'Prof',
+      };
+      return map[v.toLowerCase()] || null;
+    };
+
+    const normalizeMoney = (val: string | null): string | null => {
+      if (!val) return null;
+      const digits = val.toString().replace(/[^\d.]/g, '').split('.')[0];
+      return digits || null;
+    };
+
+    const deriveDobFromIc = (ic: string | null): string | null => {
+      if (!ic || ic.length !== 12) return null;
+      const yy = parseInt(ic.substring(0, 2));
+      const mm = ic.substring(2, 4);
+      const dd = ic.substring(4, 6);
+      const month = parseInt(mm);
+      const day = parseInt(dd);
+      if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+      const fullYear = yy <= 30 ? 2000 + yy : 1900 + yy;
+      return `${dd}/${mm}/${fullYear}`;
+    };
+
+    const deriveGenderFromIc = (ic: string | null): string | null => {
+      if (!ic || ic.length !== 12) return null;
+      const lastDigit = parseInt(ic.charAt(11));
+      if (isNaN(lastDigit)) return null;
+      return lastDigit % 2 === 1 ? 'Male' : 'Female';
+    };
+
     const normalizeResidenceStatus = (status: string | null): string | null => {
       if (!status) return null;
       const normalized = status.toString().toLowerCase().trim();
@@ -152,14 +303,23 @@ Return ONLY the JSON object, no explanation text, no markdown formatting.`;
       }
     };
 
+    const ic = cleanPhone(clean(data.ic_number));
     const cleaned = {
       name: clean(data.name),
-      ic_number: cleanPhone(clean(data.ic_number)),
+      salutation: normalizeSalutation(clean(data.salutation)),
+      gender: normalizeGender(clean(data.gender)) || deriveGenderFromIc(ic),
+      date_of_birth: clean(data.date_of_birth) || deriveDobFromIc(ic),
+      ic_number: ic,
       phone: cleanPhone(clean(data.phone)),
       email: clean(data.email),
       address: clean(data.address),
       nationality: clean(data.nationality) || 'Malaysian', // Default to Malaysian
+      race: normalizeRace(clean(data.race)),
+      religion: normalizeReligion(clean(data.religion)),
+      marital_status: normalizeMarital(clean(data.marital_status)),
       residence_status: normalizeResidenceStatus(clean(data.residence_status)),
+      education_level: normalizeEducation(clean(data.education_level)),
+      name_on_card: clean(data.name_on_card),
       mother_name: clean(data.mother_name),
       employer_name: clean(data.employer_name),
       employer_address: clean(data.employer_address),
@@ -168,7 +328,11 @@ Return ONLY the JSON object, no explanation text, no markdown formatting.`;
       office_phone: cleanPhone(clean(data.office_phone)),
       work_since: this.formatWorkSince(clean(data.work_since)),
       work_email: clean(data.work_email),
-      education_level: clean(data.education_level),
+      employment_status: normalizeEmpStatus(clean(data.employment_status)),
+      business_classification: normalizeBusinessClass(clean(data.business_classification)),
+      employment_type: normalizeEmpType(clean(data.employment_type)),
+      monthly_income: normalizeMoney(clean(data.monthly_income)),
+      monthly_commitment: normalizeMoney(clean(data.monthly_commitment)),
       emergency_name: clean(data.emergency_name),
       emergency_phone: cleanPhone(clean(data.emergency_phone)),
       emergency_relation: clean(data.emergency_relation),
