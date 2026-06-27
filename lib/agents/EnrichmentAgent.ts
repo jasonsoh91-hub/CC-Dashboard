@@ -190,16 +190,16 @@ export class EnrichmentAgent extends BaseAgent {
       return 'Government';
     }
     if (text.includes('bank') || text.includes('financial')) {
-      return 'Private';
+      return 'Private Limited';
     }
     if (text.includes('owner') || text.includes('md') || text.includes('ceo')) {
-      return 'Self-Employed';
+      return 'Sole Proprietorship';
     }
     if (text.includes('doctor') || text.includes('lawyer') || text.includes('accountant')) {
-      return 'Professional';
+      return 'Partnership';
     }
 
-    return 'Private'; // Default
+    return 'Private Limited'; // Default
   }
 
   private inferSector(employerName: string | null, position: string | null): string {

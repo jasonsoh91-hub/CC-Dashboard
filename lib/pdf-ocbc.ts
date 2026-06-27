@@ -244,12 +244,13 @@ export async function fillOCBCFormWithFields(pdfBytes: Buffer, data: Application
   setCheck(OCBC_FIELD_MAPPINGS.marital_divorced, data.marital_status === 'Divorced');
   setCheck(OCBC_FIELD_MAPPINGS.marital_widowed, false);
 
-  // Employment Status
-  const emp = data.employment_status?.toLowerCase() || '';
-  setCheck(OCBC_FIELD_MAPPINGS.emp_salaried, emp === 'employed' || emp.includes('salaried'));
-  setCheck(OCBC_FIELD_MAPPINGS.emp_government, emp.includes('government'));
-  setCheck(OCBC_FIELD_MAPPINGS.emp_self_employed, emp === 'self-employed' || emp.includes('self'));
-  setCheck(OCBC_FIELD_MAPPINGS.emp_director, emp.includes('director'));
+  // Employment Status / Type → OCBC checkboxes
+  // Old enums collapsed; new employment_type holds the salaried/govt/self signal.
+  const empType = data.employment_type?.toLowerCase() || '';
+  setCheck(OCBC_FIELD_MAPPINGS.emp_salaried, empType === 'private employee');
+  setCheck(OCBC_FIELD_MAPPINGS.emp_government, empType === 'government employee');
+  setCheck(OCBC_FIELD_MAPPINGS.emp_self_employed, empType === 'self employed');
+  setCheck(OCBC_FIELD_MAPPINGS.emp_director, empType === 'employer');
 
   // Card Selection
   const card = data.card_type || '';
