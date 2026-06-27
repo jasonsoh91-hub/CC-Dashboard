@@ -231,18 +231,18 @@ export async function fillOCBCFormWithFields(pdfBytes: Buffer, data: Application
 
   // Education Level
   const edu = data.education_level?.toLowerCase() || '';
-  setCheck(OCBC_FIELD_MAPPINGS.edu_primary, edu.includes('SPM') || edu.includes('primary'));
-  setCheck(OCBC_FIELD_MAPPINGS.edu_secondary, edu.includes('STPM') || edu.includes('secondary'));
-  setCheck(OCBC_FIELD_MAPPINGS.edu_diploma, edu.includes('diploma') || edu.includes('Diploma'));
-  setCheck(OCBC_FIELD_MAPPINGS.edu_degree, edu.includes('degree') || edu.includes('Degree'));
-  setCheck(OCBC_FIELD_MAPPINGS.edu_master, edu.includes('master') || edu.includes('Master'));
+  setCheck(OCBC_FIELD_MAPPINGS.edu_primary, edu.includes('primary'));
+  setCheck(OCBC_FIELD_MAPPINGS.edu_secondary, edu.includes('secondary'));
+  setCheck(OCBC_FIELD_MAPPINGS.edu_diploma, edu.includes('diploma'));
+  setCheck(OCBC_FIELD_MAPPINGS.edu_degree, edu === 'degree');
+  setCheck(OCBC_FIELD_MAPPINGS.edu_master, edu.includes('master') || edu.includes('doctorate'));
   setCheck(OCBC_FIELD_MAPPINGS.edu_professional, edu.includes('professional'));
 
   // Marital Status
   setCheck(OCBC_FIELD_MAPPINGS.marital_single, data.marital_status === 'Single');
   setCheck(OCBC_FIELD_MAPPINGS.marital_married, data.marital_status === 'Married');
   setCheck(OCBC_FIELD_MAPPINGS.marital_divorced, data.marital_status === 'Divorced');
-  setCheck(OCBC_FIELD_MAPPINGS.marital_widowed, data.marital_status === 'Widowed');
+  setCheck(OCBC_FIELD_MAPPINGS.marital_widowed, false);
 
   // Employment Status
   const emp = data.employment_status?.toLowerCase() || '';

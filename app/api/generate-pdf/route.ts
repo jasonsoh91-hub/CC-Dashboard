@@ -15,24 +15,34 @@ export async function POST(request: NextRequest) {
     // Normalize education_level: map common AI-extracted variants to valid enum values
     if (body.education_level) {
       const eduMap: Record<string, string> = {
-        'mba': 'Master',
-        'master\'s': 'Master',
-        'masters': 'Master',
-        'msc': 'Master',
-        'master of business administration': 'Master',
-        'phd': 'PhD',
-        'doctorate': 'PhD',
+        'mba': 'Masters',
+        'master': 'Masters',
+        "master's": 'Masters',
+        'masters': 'Masters',
+        'msc': 'Masters',
+        'master of business administration': 'Masters',
+        'phd': 'Doctorate',
+        'doctorate': 'Doctorate',
+        'doctoral': 'Doctorate',
         'bachelor': 'Degree',
-        'bachelor\'s': 'Degree',
+        "bachelor's": 'Degree',
         'degree': 'Degree',
         'diploma': 'Diploma',
-        'stpm': 'STPM',
-        'spm': 'SPM',
+        'stpm': 'Secondary Education',
+        'spm': 'Secondary Education',
+        'secondary': 'Secondary Education',
+        'high school': 'Secondary Education',
+        'primary': 'Primary Education',
+        'professional': 'Professional Qualification',
+        'professional qualification': 'Professional Qualification',
+        'aca': 'Professional Qualification',
+        'acca': 'Professional Qualification',
+        'cfa': 'Professional Qualification',
       };
-      const validLevels = ['SPM', 'STPM', 'Diploma', 'Degree', 'Master', 'PhD', 'Others'];
+      const validLevels = ['Primary Education', 'Secondary Education', 'Diploma', 'Degree', 'Masters', 'Doctorate', 'Professional Qualification'];
       const raw = String(body.education_level).trim();
       if (!validLevels.includes(raw)) {
-        body.education_level = eduMap[raw.toLowerCase()] ?? 'Others';
+        body.education_level = eduMap[raw.toLowerCase()] ?? 'Secondary Education';
       }
     }
 

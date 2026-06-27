@@ -40,7 +40,7 @@ Return this exact JSON structure (null for missing fields):
   "office_phone": "office phone from 'Office Number:' field (digits only)",
   "work_since": "length of service - extract the raw date value (e.g., 'June 2024', 'January 2023', '06/2024')",
   "work_email": "HR/Work email from 'HR Email:' or 'Work Email:' field - this is SEPARATE from personal email",
-  "education_level": "education level from 'Education Level:' or 'Education:' field - (SPM, STPM, Diploma, Degree, Master, PhD, Others)",
+  "education_level": "education level from 'Education Level:' or 'Education:' field - (Primary Education, Secondary Education, Diploma, Degree, Masters, Doctorate, Professional Qualification)",
   "emergency_name": "emergency contact name - from 'Emergency Name:', 'Emergency Contact Name:'",
   "emergency_phone": "emergency contact phone - from 'Emergency Contact:', 'Emergency Contact No:', 'Emergency Tel:' ONLY - DO NOT use applicant's HP number",
   "emergency_relation": "relationship to emergency contact"

@@ -2,8 +2,8 @@ import { z } from 'zod';
 import { BANKS, BankId } from './banks';
 
 // Malaysian race options
-const races = ['Malay', 'Chinese', 'Indian', 'Others'] as const;
-const religions = ['Islam', 'Buddhism', 'Christianity', 'Hinduism', 'Others'] as const;
+const races = ['Malay', 'Chinese', 'Indian', 'Punjabi', 'Others'] as const;
+const religions = ['Islam', 'Christian', 'Buddhist', 'Hindu', 'Sikhism', 'Atheist', 'Others'] as const;
 const malaysianStates = [
   'Johor',
   'Kedah',
@@ -22,9 +22,9 @@ const malaysianStates = [
   'Labuan',
   'Putrajaya',
 ] as const;
-const maritalStatuses = ['Single', 'Married', 'Divorced', 'Widowed'] as const;
+const maritalStatuses = ['Single', 'Married', 'Divorced', 'Others'] as const;
 const residenceStatuses = ['Owned', 'Rented', 'With Parents', 'Others'] as const;
-const educationLevels = ['SPM', 'STPM', 'Diploma', 'Degree', 'Master', 'PhD', 'Others'] as const;
+const educationLevels = ['Primary Education', 'Secondary Education', 'Diploma', 'Degree', 'Masters', 'Doctorate', 'Professional Qualification'] as const;
 const employmentStatuses = ['Employed', 'Self-Employed', 'Unemployed', 'Retired', 'Student'] as const;
 const businessClassifications = ['Government', 'Private', 'Self-Employed', 'Professional'] as const;
 const employmentTypes = ['Permanent', 'Contract', 'Probation'] as const;

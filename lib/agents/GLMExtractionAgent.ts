@@ -78,7 +78,7 @@ Return this exact JSON structure:
   "office_phone": "office phone from 'Office Number:', 'Office:', 'Office Tel:' - digits only",
   "work_since": "length of service from 'Length in Service:', 'Since:', 'Date joined:' - EXTRACT the raw date value (e.g., 'June 2024', 'January 2023'). The system will automatically convert this to years/months format.",
   "work_email": "work/HR email from 'HR Email:', 'Work Email:' - this is SEPARATE from personal email",
-  "education_level": "education level from 'Education Level:', 'Education:' - (SPM, STPM, Diploma, Degree, Master, PhD, Others)",
+  "education_level": "education level from 'Education Level:', 'Education:' - (Primary Education, Secondary Education, Diploma, Degree, Masters, Doctorate, Professional Qualification)",
   "emergency_name": "emergency contact name - from 'Emergency Name:', 'Emergency Contact Name:'",
   "emergency_phone": "emergency contact phone - from 'Emergency Contact:', 'Emergency Contact No:', 'Emergency Tel:' ONLY - DO NOT use applicant's HP number",
   "emergency_relation": "relationship to emergency contact"
