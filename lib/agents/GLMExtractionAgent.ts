@@ -384,8 +384,19 @@ CRITICAL mappings for Malaysian forms:
       .map(l => l.trim().replace(/^\d+\s*[.)\-:]\s+/, ''))
       .filter(l => l);
 
+    let currentSection: 'emergency' | 'employer' | null = null;
+
     for (const line of lines) {
       const lowerLine = line.toLowerCase();
+
+      // Section detection (latches until another section starts)
+      if (/emergency/i.test(lowerLine)) {
+        currentSection = 'emergency';
+      } else if (/^(company|employer|comp\s*address|nature\s*business|position|office)/i.test(lowerLine)) {
+        currentSection = 'employer';
+      } else if (/^(name|ic|residen|mother|education|email|hp|mobile)/i.test(lowerLine)) {
+        currentSection = null;
+      }
 
       // Name
       if (/^name\s*[:=]/i.test(line) && !data.name) {
@@ -401,12 +412,13 @@ CRITICAL mappings for Malaysian forms:
       // Phone numbers - ONLY from HP/Mobile/Tel fields, NOT emergency
       if ((/^hp\s*[:=]|mobile\s*[:=]|tel\s*[:=]|telephone\s*[:=]/i.test(line) ||
           (/hp\s*no|mobile\s*no|tel\s*no/i.test(lowerLine) && !/emergency/i.test(lowerLine))) &&
-          !data.phone) {
+          currentSection !== 'emergency' && !data.phone) {
         data.phone = this.extractPhone(line);
       }
 
-      // Emergency contact phone - ONLY from Emergency fields
-      if ((/emergency/i.test(lowerLine) && (/contact|hp|tel|phone/i.test(lowerLine))) && !data.emergency_phone) {
+      // Emergency contact phone — explicit emergency label OR inside emergency section
+      const isContactLine = /contact\s*(number|no|phone|hp|tel)|^hp\s*[:=]|^tel\s*[:=]|^phone\s*[:=]/i.test(lowerLine);
+      if (!data.emergency_phone && isContactLine && currentSection === 'emergency') {
         data.emergency_phone = this.extractPhone(line);
       }
 
@@ -415,8 +427,10 @@ CRITICAL mappings for Malaysian forms:
         data.emergency_name = this.extractAfterColon(line);
       }
 
-      // Emergency relation
-      if (/emergency\s*relation/i.test(lowerLine) && !data.emergency_relation) {
+      // Emergency relation — explicit OR bare "Relation:" inside emergency section
+      if (!data.emergency_relation &&
+          (/emergency\s*relation/i.test(lowerLine) ||
+           (/^relation(ship)?\s*[:=]/i.test(lowerLine) && currentSection === 'emergency'))) {
         data.emergency_relation = this.extractAfterColon(line);
       }
 
@@ -501,8 +515,21 @@ CRITICAL mappings for Malaysian forms:
   }
 
   private extractPhone(line: string): string {
-    const match = line.match(/(0\d{1,2}[-\s]?\d{7,8})/);
-    return match ? match[1] : '';
+    // Malaysian +60 -> 0XXX, Singapore +65 -> strip, plain 0XXXXXXXX, or any 7-12 run of digits
+    const intlMy = line.match(/\+60[-\s]?(\d[\d\s-]{6,12}\d)/);
+    if (intlMy) return ('0' + intlMy[1]).replace(/[^\d]/g, '');
+
+    const intlSg = line.match(/\+65[-\s]?(\d[\d\s-]{6,12}\d)/);
+    if (intlSg) return intlSg[1].replace(/[^\d]/g, '');
+
+    const local = line.match(/(0\d{1,2}[-\s]?\d{6,9})/);
+    if (local) return local[1].replace(/[^\d]/g, '');
+
+    // Last resort: any contiguous run of 7-12 digits (after colon)
+    const colonIdx = line.indexOf(':');
+    const tail = colonIdx >= 0 ? line.slice(colonIdx + 1) : line;
+    const generic = tail.replace(/[^\d]/g, '').match(/\d{7,12}/);
+    return generic ? generic[0] : '';
   }
 
   private expandAbbreviations(text: string): string {
