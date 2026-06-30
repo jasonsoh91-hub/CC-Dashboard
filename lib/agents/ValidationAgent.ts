@@ -40,7 +40,7 @@ export class ValidationAgent extends BaseAgent {
         invalidFields.ic_number = 'IC number must be exactly 12 digits';
       } else {
         // Basic IC validation (check if reasonable)
-        const year = parseInt(icClean.substring(0, 2));
+        const yy = icClean.substring(0, 2);
         const month = parseInt(icClean.substring(2, 4));
         const day = parseInt(icClean.substring(4, 6));
 
@@ -51,8 +51,8 @@ export class ValidationAgent extends BaseAgent {
           invalidFields.ic_number = 'Invalid day in IC number';
         }
 
-        // Suggest DOB from IC
-        const fullYear = year > 30 ? `19${year}` : `20${year}`;
+        // Suggest DOB from IC (preserve "00".."99" → 2000..1999 mapping)
+        const fullYear = parseInt(yy) > 30 ? `19${yy}` : `20${yy}`;
         suggestions.date_of_birth = `${day}/${month}/${fullYear}`;
       }
     }
