@@ -55,11 +55,14 @@ Rules:
 
       const extractedData = this.extractJson<ExtractedData>(response);
       if (extractedData) {
+        const cleaned = this.cleanData(extractedData);
+        const { data: verified, warnings: verifyWarnings } =
+          this.verifyAgainstSource(cleaned, rawData);
         return {
           success: true,
-          data: this.cleanData(extractedData),
-          confidence: this.calculateConfidence(extractedData),
-          warnings: this.generateWarnings(extractedData),
+          data: verified,
+          confidence: this.calculateConfidence(verified),
+          warnings: [...this.generateWarnings(verified), ...verifyWarnings],
         };
       }
 
@@ -85,8 +88,9 @@ ${rawData}
 
 Return this exact JSON structure:
 {
-  "name": "full name from 'Name:', 'Applicant Name', etc.",
-  "ic_number": "12-digit Malaysian IC number",
+  "name": "full name from 'Name:', 'Applicant Name', 'Nama:', etc.",
+  "ic_number": "12-digit Malaysian IC number (digits only, strip dashes)",
+  "passport_number": "passport number from 'Passport:' or 'Passport No:' for non-Malaysian applicants (uppercase, keep letters and digits)",
   "phone": "APPLICANT'S mobile phone ONLY - from 'HP:', 'HP No:', 'Mobile:', 'Mobile No:', 'Tel:' - DO NOT extract emergency contact numbers",
   "email": "PERSONAL email from 'Email:' (NOT work/HR email) - prioritize gmail, outlook, hotmail, yahoo over corporate emails",
   "address": "residential address from 'Residential Address:', 'Address:'",
@@ -111,6 +115,8 @@ CRITICAL PHONE NUMBER EXTRACTION RULES:
 3. If a phone number is under an "Emergency" section, it goes to emergency_phone, NOT phone
 4. OFFICE PHONE (office_phone field): ONLY extract from 'Office:', 'Office No:', 'Office Tel:', 'Office Number:'
 5. If no clear HP/Mobile number is found, leave phone field as null - DO NOT guess or use emergency contact
+6. ALWAYS extract phones with international prefixes (+65 Singapore, +60 Malaysia, +1 US, +44 UK, etc.). Do NOT drop a phone just because it is foreign. Preserve country code as-is in the JSON — downstream code normalizes it.
+7. Copy phone digits EXACTLY as they appear. Do NOT add, remove, or guess digits. If unsure, output what you see, even if non-standard length.
 
 CRITICAL mappings for Malaysian forms:
 - "IC/Passport: XXX" or "Identical number: XXX" → ic_number
@@ -142,7 +148,14 @@ CRITICAL mappings for Malaysian forms:
 
     // Normalize MY/SG phone formats deterministically (LLM is inconsistent on
     // country-code stripping). IC numbers must NOT be touched by this.
-    const normalizePhone = (phone: string | null | undefined): string | null => {
+    // `kind` lets us safely prepend leading zero to known-landline fields
+    // (office_phone) where 8-digit MY shape would otherwise be ambiguous with
+    // an 8-digit Singaporean mobile.
+    const normalizePhone = (
+      phone: string | null | undefined,
+      kind: 'mobile' | 'landline' = 'mobile',
+      country: 'MY' | 'SG' = 'MY',
+    ): string | null => {
       const digits = cleanPhone(phone);
       if (!digits) return null;
 
@@ -150,17 +163,25 @@ CRITICAL mappings for Malaysian forms:
       if (/^60\d{8,11}$/.test(digits)) {
         return '0' + digits.slice(2);
       }
-      // Singaporean: +65XXXXXXXX → XXXXXXXX (8-digit local)
+      // Singaporean: +65XXXXXXXX → XXXXXXXX (8-digit local, kept as-is)
       if (/^65\d{8}$/.test(digits)) {
         return digits.slice(2);
       }
-      // MY local number missing leading zero. Only act when the shape is
-      // unambiguously Malaysian:
-      //   - 9 digits starting with "1" → MY mobile (e.g. "162223344" → "0162223344")
-      //   - 9 digits starting with "3" → KL landline (e.g. "378887777" → "0378887777")
-      // State landlines (8 digits starting 4-9) collide with SG mobiles — leave
-      // them alone to avoid mangling Singaporean numbers.
+      // Already has leading 0 → trust as-is
+      if (digits.startsWith('0')) return digits;
+
+      // SG: never prepend 0. SG numbers are 8 digits with no leading 0.
+      if (country === 'SG') return digits;
+
+      // Unambiguous MY shapes for mobile-context fields:
+      //   - 9 digits starting "1" → MY mobile  (e.g. 162223344 → 0162223344)
+      //   - 9 digits starting "3" → KL landline (e.g. 378887777 → 0378887777)
       if (/^[13]\d{8}$/.test(digits)) {
+        return '0' + digits;
+      }
+      // Landline context (MY only): prepend 0 to 7-9 digit MY-shaped state
+      // landlines (starts with 4-9, length 7-9).
+      if (kind === 'landline' && /^[3-9]\d{6,8}$/.test(digits)) {
         return '0' + digits;
       }
       return digits;
@@ -172,10 +193,14 @@ CRITICAL mappings for Malaysian forms:
       nationality = this.inferNationality(data.address);
     }
 
+    const passport = clean(data.passport_number);
+    const country: 'MY' | 'SG' = nationality === 'Singaporean' ? 'SG' : 'MY';
+
     return {
       name: clean(data.name),
       ic_number: cleanPhone(clean(data.ic_number)),
-      phone: normalizePhone(data.phone),
+      passport_number: passport ? passport.toUpperCase().replace(/[^A-Z0-9]/g, '') : null,
+      phone: normalizePhone(data.phone, 'mobile', country),
       email: clean(data.email),
       address: clean(data.address),
       nationality: nationality || 'Malaysian', // Default to Malaysian
@@ -184,13 +209,47 @@ CRITICAL mappings for Malaysian forms:
       employer_address: clean(data.employer_address),
       position: clean(data.position),
       occupation: clean(data.occupation),
-      office_phone: normalizePhone(data.office_phone),
+      office_phone: normalizePhone(data.office_phone, 'landline', country),
       work_since: this.formatWorkSince(clean(data.work_since)),
       work_email: clean(data.work_email),
       education_level: clean(data.education_level),
       emergency_name: clean(data.emergency_name),
-      emergency_phone: normalizePhone(data.emergency_phone),
+      emergency_phone: normalizePhone(data.emergency_phone, 'mobile', country),
       emergency_relation: clean(data.emergency_relation),
+    };
+  }
+
+  // Defense against LLM digit hallucination. Phone fields the LLM emits
+  // must trace back to digits actually present in the raw input — otherwise
+  // null the value and emit a warning rather than autofilling a wrong number.
+  private verifyAgainstSource(
+    data: ExtractedData,
+    rawData: string,
+  ): { data: ExtractedData; warnings: string[] } {
+    const warnings: string[] = [];
+    const rawDigits = rawData.replace(/\D/g, '');
+
+    const check = (val: string | null | undefined, label: string): string | null => {
+      if (!val) return null;
+      const d = val.replace(/\D/g, '');
+      if (d.length < 7) return null;
+      if (rawDigits.includes(d)) return val;
+      // Tolerate +60/0 prefix toggle and +65 strip
+      if (d.startsWith('0') && rawDigits.includes('60' + d.slice(1))) return val;
+      if (d.startsWith('0') && rawDigits.includes(d.slice(1))) return val;
+      if (rawDigits.includes('65' + d)) return val;
+      warnings.push(`${label} value "${val}" not present in raw input — dropped (possible LLM hallucination)`);
+      return null;
+    };
+
+    return {
+      data: {
+        ...data,
+        phone: check(data.phone, 'phone'),
+        office_phone: check(data.office_phone, 'office_phone'),
+        emergency_phone: check(data.emergency_phone, 'emergency_phone'),
+      },
+      warnings,
     };
   }
 
@@ -237,7 +296,6 @@ CRITICAL mappings for Malaysian forms:
     let score = 0;
     const weights = {
       name: 25,
-      ic_number: 30,
       phone: 10,
       email: 10,
       employer_name: 10,
@@ -250,6 +308,13 @@ CRITICAL mappings for Malaysian forms:
       if (data[field as keyof ExtractedData]) {
         score += weight;
       }
+    }
+
+    // Identity proxy: 30 points if Malaysian IC OR passport is present.
+    // Foreign applicants previously lost a flat 30 points for missing IC even
+    // when a valid passport was provided.
+    if (data.ic_number || data.passport_number) {
+      score += 30;
     }
 
     return Math.min(100, score);
@@ -362,8 +427,11 @@ CRITICAL mappings for Malaysian forms:
     const warnings: string[] = [];
 
     if (!data.name) warnings.push('Applicant name not found');
-    if (!data.ic_number) warnings.push('IC number not found');
-    else if (data.ic_number.length !== 12) warnings.push('IC number may be invalid (not 12 digits)');
+    if (!data.ic_number && !data.passport_number) {
+      warnings.push('No IC number or passport found');
+    } else if (data.ic_number && data.ic_number.length !== 12) {
+      warnings.push('IC number may be invalid (not 12 digits)');
+    }
     if (!data.phone) warnings.push('Phone number not found');
     if (!data.email) warnings.push('Email not found');
     if (!data.employer_name) warnings.push('Employer name not found');
@@ -388,6 +456,7 @@ CRITICAL mappings for Malaysian forms:
     const data: ExtractedData = {
       name: null,
       ic_number: null,
+      passport_number: null,
       phone: null,
       email: null,
       address: null,
@@ -433,6 +502,12 @@ CRITICAL mappings for Malaysian forms:
       const digits = line.replace(/\D/g, '').match(/\d{12}/);
       if (digits && !data.ic_number) {
         data.ic_number = digits[0];
+      }
+
+      // Passport (foreign applicants) — letters + digits, typically 6-9 chars
+      if (/passport\s*(no|number)?\s*[:=]/i.test(lowerLine) && !data.passport_number) {
+        const m = line.match(/[:=]\s*([A-Z][A-Z0-9]{5,11})/i);
+        if (m) data.passport_number = m[1].toUpperCase();
       }
 
       // Phone numbers - ONLY from HP/Mobile/Tel fields, NOT emergency
@@ -577,6 +652,7 @@ CRITICAL mappings for Malaysian forms:
     return {
       name: null,
       ic_number: null,
+      passport_number: null,
       phone: null,
       email: null,
       address: null,

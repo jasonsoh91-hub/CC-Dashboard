@@ -16,6 +16,7 @@ export interface AgentOutput {
 export interface ExtractedData {
   name: string | null;
   ic_number: string | null;
+  passport_number?: string | null;
   phone: string | null;
   email: string | null;
   address: string | null;
