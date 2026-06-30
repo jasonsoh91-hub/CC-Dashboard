@@ -43,8 +43,9 @@ export class EnrichmentAgent extends BaseAgent {
       }
     }
 
-    // Enrich employment sector from employer/position
-    if (data.employer_name || data.position) {
+    // Enrich employment sector from employer/position (only if extractor did
+    // not already derive one from Nature of Business)
+    if (!data.employment_sector && (data.employer_name || data.position)) {
       const sector = this.inferSector(data.employer_name, data.position);
       if (sector) {
         enrichedData.employment_sector = sector;

@@ -33,6 +33,8 @@ export interface ExtractedData {
   emergency_phone: string | null;
   emergency_relation: string | null;
   education_level?: string | null;
+  residence_status?: string | null;
+  nature_of_business?: string | null;
   gender?: string;
   business_classification?: string;
   employment_sector?: string;

@@ -42,9 +42,9 @@ Rules:
 9. Common label aliases — map equally:
    - "Comp address" / "Company address" / "Address Employer" / "Employer address" → employer_address
    - "Lenght of services" / "Length in Service" / "Date joined" / "How many year working" → work_since
-   - "Nature business" / "Nature of business" → business_classification (NOT occupation)
+   - "Nature business" / "Nature of business" → nature_of_business (raw industry description, e.g. "Legal Service", "Banking", "Retail")
    - "Residental address" / "Residential Address" → address
-   - "Residental status" / "Residence Status" → residence_status
+   - "Residental status" / "Residence Status" → residence_status (raw value, e.g. "Family", "Stay with parents", "Owned", "Rented")
    - "Contact number" under emergency block → emergency_phone (not phone)
    - "Valid HR email" / "HR Email" / "Work Email" → work_email
    - "Mother full name" → mother_name`;
@@ -55,7 +55,7 @@ Rules:
 
       const extractedData = this.extractJson<ExtractedData>(response);
       if (extractedData) {
-        const cleaned = this.cleanData(extractedData);
+        const cleaned = this.cleanData(extractedData, rawData);
         const { data: verified, warnings: verifyWarnings } =
           this.verifyAgainstSource(cleaned, rawData);
         return {
@@ -106,7 +106,9 @@ Return this exact JSON structure:
   "education_level": "education level from 'Education Level:', 'Education:' - (Primary Education, Secondary Education, Diploma, Degree, Masters, Doctorate, Professional Qualification)",
   "emergency_name": "emergency contact name - from 'Emergency Name:', 'Emergency Contact Name:'",
   "emergency_phone": "emergency contact phone - from 'Emergency Contact:', 'Emergency Contact No:', 'Emergency Tel:' ONLY - DO NOT use applicant's HP number",
-  "emergency_relation": "relationship to emergency contact"
+  "emergency_relation": "relationship to emergency contact",
+  "residence_status": "raw residence status from 'Residential Status:' / 'Residental status:' — e.g. 'Family', 'Owned', 'Rented', 'Stay with parents'",
+  "nature_of_business": "raw industry / nature of business from 'Nature of business:' / 'Nature business:' — e.g. 'Legal Service', 'Banking', 'Retail', 'Manufacturing'"
 }
 
 CRITICAL PHONE NUMBER EXTRACTION RULES:
@@ -134,7 +136,24 @@ CRITICAL mappings for Malaysian forms:
 - Return null (not empty string) for missing fields`;
   }
 
-  private cleanData(data: ExtractedData): ExtractedData {
+  private detectPhoneCountry(
+    rawData: string,
+    field: 'phone' | 'office_phone' | 'emergency_phone',
+  ): 'MY' | 'SG' | null {
+    const labelPatterns: Record<typeof field, RegExp> = {
+      phone: /(^|\n)\s*(?:\d+\s*[.)\-:]\s*)?(?:hp|mobile|tel|telephone|phone)\s*(no|number)?\s*[:=]\s*([^\n]+)/i,
+      office_phone: /(^|\n)\s*(?:\d+\s*[.)\-:]\s*)?office\s*(number|no|tel|phone)?\s*[:=]\s*([^\n]+)/i,
+      emergency_phone: /(^|\n)\s*(?:\d+\s*[.)\-:]\s*)?(?:emergency|contact)\s*(name|number|no|tel|phone|hp|contact)?\s*[:=]\s*([^\n]+)/i,
+    };
+    const m = rawData.match(labelPatterns[field]);
+    if (!m) return null;
+    const tail = m[m.length - 1] ?? '';
+    if (/\+?\s*65/.test(tail)) return 'SG';
+    if (/\+?\s*60/.test(tail)) return 'MY';
+    return null;
+  }
+
+  private cleanData(data: ExtractedData, rawData: string = ''): ExtractedData {
     const clean = (val: string | null | undefined): string | null => {
       if (val === null || val === undefined || val === '') return null;
       const trimmed = val.trim();
@@ -163,15 +182,24 @@ CRITICAL mappings for Malaysian forms:
       if (/^60\d{8,11}$/.test(digits)) {
         return '0' + digits.slice(2);
       }
-      // Singaporean: +65XXXXXXXX → XXXXXXXX (8-digit local, kept as-is)
+      // Singaporean: +65XXXXXXXX → keep "65" prefix (user preference: full
+      // country-code-anchored format like "6562061070" rather than stripped
+      // local "62061070"). "+" is already gone via cleanPhone.
       if (/^65\d{8}$/.test(digits)) {
-        return digits.slice(2);
+        return digits;
       }
       // Already has leading 0 → trust as-is
       if (digits.startsWith('0')) return digits;
 
-      // SG: never prepend 0. SG numbers are 8 digits with no leading 0.
-      if (country === 'SG') return digits;
+      // SG context: do not prepend 0. If only 8 local digits are present
+      // without the 65 prefix, prepend "65" to match the keep-prefix rule
+      // above so output stays consistent.
+      if (country === 'SG') {
+        if (/^[89]\d{7}$/.test(digits) || /^[3-7]\d{7}$/.test(digits)) {
+          return '65' + digits;
+        }
+        return digits;
+      }
 
       // Unambiguous MY shapes for mobile-context fields:
       //   - 9 digits starting "1" → MY mobile  (e.g. 162223344 → 0162223344)
@@ -194,13 +222,22 @@ CRITICAL mappings for Malaysian forms:
     }
 
     const passport = clean(data.passport_number);
-    const country: 'MY' | 'SG' = nationality === 'Singaporean' ? 'SG' : 'MY';
+    const defaultCountry: 'MY' | 'SG' = nationality === 'Singaporean' ? 'SG' : 'MY';
+    // Per-field country detected from raw input prefix (+65 / +60) overrides
+    // the applicant's nationality. A Malaysian applicant can still have a
+    // Singapore office number, and vice versa.
+    const phoneCountry = this.detectPhoneCountry(rawData, 'phone') ?? defaultCountry;
+    const officeCountry = this.detectPhoneCountry(rawData, 'office_phone') ?? defaultCountry;
+    const emergencyCountry = this.detectPhoneCountry(rawData, 'emergency_phone') ?? defaultCountry;
+
+    const residenceRaw = clean(data.residence_status);
+    const natureRaw = clean(data.nature_of_business);
 
     return {
       name: clean(data.name),
       ic_number: cleanPhone(clean(data.ic_number)),
       passport_number: passport ? passport.toUpperCase().replace(/[^A-Z0-9]/g, '') : null,
-      phone: normalizePhone(data.phone, 'mobile', country),
+      phone: normalizePhone(data.phone, 'mobile', phoneCountry),
       email: clean(data.email),
       address: clean(data.address),
       nationality: nationality || 'Malaysian', // Default to Malaysian
@@ -209,14 +246,51 @@ CRITICAL mappings for Malaysian forms:
       employer_address: clean(data.employer_address),
       position: clean(data.position),
       occupation: clean(data.occupation),
-      office_phone: normalizePhone(data.office_phone, 'landline', country),
+      office_phone: normalizePhone(data.office_phone, 'landline', officeCountry),
       work_since: this.formatWorkSince(clean(data.work_since)),
       work_email: clean(data.work_email),
       education_level: clean(data.education_level),
       emergency_name: clean(data.emergency_name),
-      emergency_phone: normalizePhone(data.emergency_phone, 'mobile', country),
+      emergency_phone: normalizePhone(data.emergency_phone, 'mobile', emergencyCountry),
       emergency_relation: clean(data.emergency_relation),
+      residence_status: this.normalizeResidenceStatus(residenceRaw),
+      nature_of_business: natureRaw,
+      employment_sector: this.mapSector(natureRaw) ?? undefined,
     };
+  }
+
+  private normalizeResidenceStatus(raw: string | null): string | null {
+    if (!raw) return null;
+    const v = raw.toLowerCase().trim();
+    // Dropdown options: 'Owned', 'Rented', 'With Parents', 'Others'
+    if (/^(family|stay\s*with\s*parents?|with\s*parents?|live\s*with\s*parents?|parents?)$/i.test(v)) {
+      return 'With Parents';
+    }
+    if (/^(own|owned|own\s*house|self\s*owned|mortgage|mortgaged)/i.test(v)) {
+      return 'Owned';
+    }
+    if (/^(rent|rented|renting|tenant)/i.test(v)) {
+      return 'Rented';
+    }
+    // Pass through if user already used a canonical value
+    if (/^(owned|rented|with\s*parents|others)$/i.test(v)) {
+      return v.replace(/\s+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    }
+    return 'Others';
+  }
+
+  private mapSector(raw: string | null): string | null {
+    if (!raw) return null;
+    const v = raw.toLowerCase();
+    // Dropdown: Banking | Education | Healthcare | Manufacturing | Retail | Services | Technology | Others
+    if (/bank|finance|financial|insurance/.test(v)) return 'Banking';
+    if (/school|university|college|education|teaching|academy/.test(v)) return 'Education';
+    if (/hospital|clinic|health|medical|pharma/.test(v)) return 'Healthcare';
+    if (/manufactur|factory|industrial|production/.test(v)) return 'Manufacturing';
+    if (/retail|wholesale|trading|shop|store|f&b|restaurant/.test(v)) return 'Retail';
+    if (/tech|software|it\b|saas|digital|computer/.test(v)) return 'Technology';
+    if (/legal|law|consult|advisor|service|professional|agency/.test(v)) return 'Services';
+    return 'Others';
   }
 
   // Defense against LLM digit hallucination. Phone fields the LLM emits
@@ -457,6 +531,8 @@ CRITICAL mappings for Malaysian forms:
       name: null,
       ic_number: null,
       passport_number: null,
+      residence_status: null,
+      nature_of_business: null,
       phone: null,
       email: null,
       address: null,
@@ -593,6 +669,16 @@ CRITICAL mappings for Malaysian forms:
       if (/education\s*level|education/i.test(lowerLine) && !data.education_level) {
         data.education_level = this.extractAfterColon(line);
       }
+
+      // Residence status
+      if (/residen(tial|tal)?\s*status|residence\s*status/i.test(lowerLine) && !data.residence_status) {
+        data.residence_status = this.extractAfterColon(line);
+      }
+
+      // Nature of business
+      if (/nature\s*(of\s*)?business/i.test(lowerLine) && !data.nature_of_business) {
+        data.nature_of_business = this.extractAfterColon(line);
+      }
     }
 
     // Infer nationality from address
@@ -653,6 +739,8 @@ CRITICAL mappings for Malaysian forms:
       name: null,
       ic_number: null,
       passport_number: null,
+      residence_status: null,
+      nature_of_business: null,
       phone: null,
       email: null,
       address: null,
