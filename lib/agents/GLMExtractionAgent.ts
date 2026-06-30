@@ -140,6 +140,32 @@ CRITICAL mappings for Malaysian forms:
       return phone.replace(/[^\d]/g, '');
     };
 
+    // Normalize MY/SG phone formats deterministically (LLM is inconsistent on
+    // country-code stripping). IC numbers must NOT be touched by this.
+    const normalizePhone = (phone: string | null | undefined): string | null => {
+      const digits = cleanPhone(phone);
+      if (!digits) return null;
+
+      // Malaysian: +60XXXXXXXXX → 0XXXXXXXXX
+      if (/^60\d{8,11}$/.test(digits)) {
+        return '0' + digits.slice(2);
+      }
+      // Singaporean: +65XXXXXXXX → XXXXXXXX (8-digit local)
+      if (/^65\d{8}$/.test(digits)) {
+        return digits.slice(2);
+      }
+      // MY local number missing leading zero. Only act when the shape is
+      // unambiguously Malaysian:
+      //   - 9 digits starting with "1" → MY mobile (e.g. "162223344" → "0162223344")
+      //   - 9 digits starting with "3" → KL landline (e.g. "378887777" → "0378887777")
+      // State landlines (8 digits starting 4-9) collide with SG mobiles — leave
+      // them alone to avoid mangling Singaporean numbers.
+      if (/^[13]\d{8}$/.test(digits)) {
+        return '0' + digits;
+      }
+      return digits;
+    };
+
     // Infer nationality from address if not provided
     let nationality = clean(data.nationality);
     if (!nationality && data.address) {
@@ -149,7 +175,7 @@ CRITICAL mappings for Malaysian forms:
     return {
       name: clean(data.name),
       ic_number: cleanPhone(clean(data.ic_number)),
-      phone: cleanPhone(clean(data.phone)),
+      phone: normalizePhone(data.phone),
       email: clean(data.email),
       address: clean(data.address),
       nationality: nationality || 'Malaysian', // Default to Malaysian
@@ -158,12 +184,12 @@ CRITICAL mappings for Malaysian forms:
       employer_address: clean(data.employer_address),
       position: clean(data.position),
       occupation: clean(data.occupation),
-      office_phone: cleanPhone(clean(data.office_phone)),
+      office_phone: normalizePhone(data.office_phone),
       work_since: this.formatWorkSince(clean(data.work_since)),
       work_email: clean(data.work_email),
       education_level: clean(data.education_level),
       emergency_name: clean(data.emergency_name),
-      emergency_phone: cleanPhone(clean(data.emergency_phone)),
+      emergency_phone: normalizePhone(data.emergency_phone),
       emergency_relation: clean(data.emergency_relation),
     };
   }

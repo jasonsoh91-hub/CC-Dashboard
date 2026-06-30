@@ -44,16 +44,21 @@ export class ValidationAgent extends BaseAgent {
         const month = parseInt(icClean.substring(2, 4));
         const day = parseInt(icClean.substring(4, 6));
 
-        if (month < 1 || month > 12) {
+        const monthValid = month >= 1 && month <= 12;
+        const dayValid = day >= 1 && day <= 31;
+
+        if (!monthValid) {
           invalidFields.ic_number = 'Invalid month in IC number';
         }
-        if (day < 1 || day > 31) {
+        if (!dayValid) {
           invalidFields.ic_number = 'Invalid day in IC number';
         }
 
-        // Suggest DOB from IC (preserve "00".."99" → 2000..1999 mapping)
-        const fullYear = parseInt(yy) > 30 ? `19${yy}` : `20${yy}`;
-        suggestions.date_of_birth = `${day}/${month}/${fullYear}`;
+        // Suggest DOB only when the embedded date is plausibly valid
+        if (monthValid && dayValid) {
+          const fullYear = parseInt(yy) > 30 ? `19${yy}` : `20${yy}`;
+          suggestions.date_of_birth = `${day}/${month}/${fullYear}`;
+        }
       }
     }
 
