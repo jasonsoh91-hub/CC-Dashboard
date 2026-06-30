@@ -8,9 +8,9 @@ export class GLMExtractionAgent extends GLMAgent {
   }
 
   async process(input: { rawData: string; context?: Record<string, unknown> }): Promise<AgentOutput & { data: ExtractedData }> {
-    const { rawData } = input;
+    const { rawData: originalRaw } = input;
 
-    if (!rawData || rawData.trim().length === 0) {
+    if (!originalRaw || originalRaw.trim().length === 0) {
       return {
         success: false,
         data: this.getEmptyData(),
@@ -18,22 +18,36 @@ export class GLMExtractionAgent extends GLMAgent {
       };
     }
 
+    // Strip leading list-numbering (e.g. "1. ", "2) ", "3 - ") from each line
+    // so field labels like "Name:" are recognized regardless of bullet style.
+    const rawData = this.stripLineNumbering(originalRaw);
+
     try {
       const systemPrompt = `You are an expert data extraction assistant for Malaysian credit card applications.
 Your task is to extract structured customer information from unstructured text and return ONLY valid JSON.
 
 Rules:
 1. Extract ALL available fields from the text
-2. Handle various formats: WhatsApp messages, emails, forms, bullet points
-3. Malaysian IC numbers are exactly 12 digits
-4. Phone numbers: Remove spaces, dashes, parentheses - keep only digits
-5. Expand common abbreviations:
+2. Handle various formats: WhatsApp messages, emails, forms, bullet points, numbered lists
+3. IGNORE leading list numbering on any line ("1.", "2)", "3 -", "4:", etc.) — it is NOT part of the field value. Treat "1. Name: John" identically to "Name: John".
+4. IC numbers may be formatted with dashes (e.g., "000823-01-0243") — strip dashes; output exactly 12 digits.
+5. Phone numbers: Remove spaces, dashes, parentheses. Strip leading country code "+60" (Malaysia) and replace with "0" (e.g. "+60197703878" → "0197703878"). Strip "+65" (Singapore) entirely (e.g. "+65 6206 1070" → "62061070"). Keep only digits.
+6. Expand common abbreviations:
    - MD → Managing Director
    - GM → General Manager
    - CEO → Chief Executive Officer
    - VP → Vice President
-6. Return null for truly missing fields (not empty strings)
-7. Return ONLY JSON, no explanation, no markdown`;
+7. Return null for truly missing fields (not empty strings)
+8. Return ONLY JSON, no explanation, no markdown
+9. Common label aliases — map equally:
+   - "Comp address" / "Company address" / "Address Employer" / "Employer address" → employer_address
+   - "Lenght of services" / "Length in Service" / "Date joined" / "How many year working" → work_since
+   - "Nature business" / "Nature of business" → business_classification (NOT occupation)
+   - "Residental address" / "Residential Address" → address
+   - "Residental status" / "Residence Status" → residence_status
+   - "Contact number" under emergency block → emergency_phone (not phone)
+   - "Valid HR email" / "HR Email" / "Work Email" → work_email
+   - "Mother full name" → mother_name`;
 
       const userPrompt = this.buildExtractionPrompt(rawData);
 
@@ -55,6 +69,13 @@ Rules:
       console.error('GLMExtractionAgent error:', error);
       return this.fallbackExtraction(rawData);
     }
+  }
+
+  private stripLineNumbering(text: string): string {
+    return text
+      .split('\n')
+      .map(line => line.replace(/^\s*\d+\s*[.)\-:]\s+/, ''))
+      .join('\n');
   }
 
   private buildExtractionPrompt(rawData: string): string {
@@ -358,7 +379,10 @@ CRITICAL mappings for Malaysian forms:
       emergency_relation: null,
     };
 
-    const lines = rawText.split('\n').map(l => l.trim()).filter(l => l);
+    const lines = rawText
+      .split('\n')
+      .map(l => l.trim().replace(/^\d+\s*[.)\-:]\s+/, ''))
+      .filter(l => l);
 
     for (const line of lines) {
       const lowerLine = line.toLowerCase();
