@@ -117,6 +117,18 @@ export default function AdminPage() {
     else setError((await res.json()).error || 'Role change failed');
   };
 
+  const resetPassword = async (id: string, userEmail: string) => {
+    const password = window.prompt(`New password for ${userEmail} (min 6 chars):`);
+    if (!password) return;
+    const res = await fetch(`/api/admin/users/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    });
+    if (res.ok) alert('Password reset.');
+    else setError((await res.json()).error || 'Password reset failed');
+  };
+
   const deleteUser = async (id: string, userEmail: string) => {
     if (!confirm(`Delete ${userEmail}? Their applications are removed too.`)) return;
     const res = await fetch(`/api/admin/users/${id}`, { method: 'DELETE' });
@@ -251,9 +263,14 @@ export default function AdminPage() {
                       {usageByEmail[u.email]?.downloads ?? 0}
                     </td>
                     <td className="py-2 pr-4">
-                      <Button variant="destructive" size="sm" onClick={() => deleteUser(u.id, u.email)}>
-                        Delete
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={() => resetPassword(u.id, u.email)}>
+                          Reset PW
+                        </Button>
+                        <Button variant="destructive" size="sm" onClick={() => deleteUser(u.id, u.email)}>
+                          Delete
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}

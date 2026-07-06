@@ -132,6 +132,65 @@ export type FeedbackRow = {
 
 export type Role = 'admin' | 'manager' | 'user';
 
+// Usable balance for the current user: team pool (if team in pool mode) else own balance.
+export async function getMyBalance(): Promise<{ balance: number; source: 'team' | 'user' }> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { balance: 0, source: 'user' };
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('balance, team_id')
+    .eq('id', user.id)
+    .single();
+
+  if (profile?.team_id) {
+    const { data: team } = await supabase
+      .from('teams')
+      .select('balance, credit_mode')
+      .eq('id', profile.team_id)
+      .single();
+    if (team?.credit_mode === 'pool') {
+      return { balance: Number(team.balance ?? 0), source: 'team' };
+    }
+  }
+  return { balance: Number(profile?.balance ?? 0), source: 'user' };
+}
+
+export type CreditTx = {
+  id: string;
+  amount: number;
+  type: string;
+  note: string | null;
+  created_at: string;
+};
+
+// Current user's own credit ledger (RLS-scoped).
+export async function listMyTransactions(): Promise<CreditTx[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from('credit_transactions')
+    .select('id, amount, type, note, created_at')
+    .order('created_at', { ascending: false })
+    .limit(100);
+  return (data ?? []) as CreditTx[];
+}
+
+// User requests a manual top-up (staff approves).
+export async function requestTopup(amount: number, note?: string): Promise<void> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+  const { error } = await supabase
+    .from('topup_requests')
+    .insert({ user_id: user.id, amount, note: note ?? null });
+  if (error) throw error;
+}
+
 // Current user's role + email (from profiles).
 export async function getMyProfile(): Promise<{ role: Role; email: string } | null> {
   const supabase = createClient();

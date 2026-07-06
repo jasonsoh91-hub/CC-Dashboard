@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fillPdfForm } from '@/lib/pdf';
 import { ApplicationFormDataSchema } from '@/lib/types';
+import { createClient } from '@/lib/supabase/server';
+
+const FORM_COST = 3; // RM3 per generated form
 
 export async function POST(request: NextRequest) {
   try {
@@ -94,8 +97,30 @@ export async function POST(request: NextRequest) {
       console.warn('[PDF API] Blanked invalid fields before export:', blanked);
     }
 
-    // Generate the PDF
+    // Generate the PDF (cheap, local) before charging so we only bill on success.
     const pdfBytes = await fillPdfForm(validatedData as any);
+
+    // Charge RM3 to the user's team pool or individual balance (atomic, server-side).
+    const supabase = await createClient();
+    const { data: charge, error: chargeErr } = await supabase.rpc('charge_generate', {
+      p_cost: FORM_COST,
+    });
+    if (chargeErr) {
+      // Fail-open only if the billing layer isn't installed yet (migration 0004 not run):
+      // 42883 = function does not exist, 42P01 = table does not exist.
+      const notInstalled = chargeErr.code === '42883' || chargeErr.code === '42P01';
+      if (notInstalled) {
+        console.warn('[PDF API] billing not installed yet — skipping charge. Run migration 0004.');
+      } else {
+        console.error('[PDF API] charge RPC error:', chargeErr.message);
+        return NextResponse.json({ error: 'Billing error', details: chargeErr.message }, { status: 500 });
+      }
+    } else if (!charge?.ok) {
+      return NextResponse.json(
+        { error: 'insufficient_credit', reason: charge?.error, balance: charge?.balance ?? 0, cost: FORM_COST },
+        { status: 402 }
+      );
+    }
 
     // Return the PDF as a downloadable file
     return new NextResponse(Buffer.from(pdfBytes), {

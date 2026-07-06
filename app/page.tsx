@@ -12,7 +12,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import type { ExtractedData, ApplicationFormData } from '@/lib/types';
 import { dropdownOptions } from '@/lib/types';
 import { BANKS, getCardsByBank } from '@/lib/banks';
-import { saveApplication, getMyProfile, logEvent, submitFeedback, type Role } from '@/lib/applications';
+import { saveApplication, getMyProfile, getMyBalance, logEvent, submitFeedback, type Role } from '@/lib/applications';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 
@@ -99,8 +99,15 @@ export default function Dashboard() {
 
   const [profile, setProfile] = useState<{ role: Role; email: string } | null>(null);
   const [lastSavedId, setLastSavedId] = useState<string | null>(null);
+  const [balance, setBalance] = useState<{ balance: number; source: 'team' | 'user' } | null>(null);
+
+  const refreshBalance = () => {
+    getMyBalance().then(setBalance).catch(() => {});
+  };
+
   useEffect(() => {
     getMyProfile().then(setProfile).catch(() => {});
+    refreshBalance();
   }, []);
 
   // Report an extraction issue / error, linked to the last saved application if any.
@@ -322,10 +329,17 @@ export default function Dashboard() {
           const savedId = await saveApplication(formData, blob);
           setLastSavedId(savedId);
           logEvent('download', savedId); // track PDF download/generation
+          refreshBalance(); // RM3 was deducted server-side
         } catch (saveErr) {
           console.error('[Save] Failed to save application:', saveErr);
           alert('PDF generated, but saving to history failed. Check console.');
         }
+      } else if (response.status === 402) {
+        const err = await response.json();
+        alert(
+          `Not enough credit to generate this form.\n\nCost: RM${err.cost}\nYour balance: RM${Number(err.balance).toFixed(2)}\n\nTop up on the Credits page.`
+        );
+        refreshBalance();
       } else {
         const errorText = await response.text();
         console.error('[PDF] Server error response:', errorText);
@@ -659,6 +673,28 @@ export default function Dashboard() {
               <span className="text-xs px-2 py-1 rounded-md bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200">
                 {profile.email} · {profile.role}
               </span>
+            )}
+            {balance && (
+              <span
+                className={
+                  'text-xs px-2 py-1 rounded-md font-semibold ' +
+                  (balance.balance < 3
+                    ? 'bg-red-100 text-red-700'
+                    : 'bg-emerald-100 text-emerald-700')
+                }
+                title={balance.source === 'team' ? 'Team pool balance' : 'Your balance'}
+              >
+                RM{balance.balance.toFixed(2)}
+                {balance.source === 'team' ? ' (pool)' : ''}
+              </span>
+            )}
+            <Link href="/credits" className={buttonVariants({ variant: 'outline' })}>
+              Credits
+            </Link>
+            {(profile?.role === 'admin' || profile?.role === 'manager') && (
+              <Link href="/team" className={buttonVariants({ variant: 'outline' })}>
+                Teams
+              </Link>
             )}
             {profile?.role === 'admin' && (
               <Link href="/admin" className={buttonVariants({ variant: 'outline' })}>
