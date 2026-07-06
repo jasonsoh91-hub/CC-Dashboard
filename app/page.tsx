@@ -12,7 +12,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import type { ExtractedData, ApplicationFormData } from '@/lib/types';
 import { dropdownOptions } from '@/lib/types';
 import { BANKS, getCardsByBank } from '@/lib/banks';
-import { saveApplication, getMyProfile, getMyBalance, logEvent, submitFeedback, type Role } from '@/lib/applications';
+import { getMyProfile, getMyBalance, logEvent, submitFeedback, type Role } from '@/lib/applications';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 
@@ -324,16 +324,11 @@ export default function Dashboard() {
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
 
-        // Persist application + PDF to Supabase (non-blocking for the download).
-        try {
-          const savedId = await saveApplication(formData, blob);
-          setLastSavedId(savedId);
-          logEvent('download', savedId); // track PDF download/generation
-          refreshBalance(); // RM3 was deducted server-side
-        } catch (saveErr) {
-          console.error('[Save] Failed to save application:', saveErr);
-          alert('PDF generated, but saving to history failed. Check console.');
-        }
+        // Application + PDF are saved server-side (atomic with the charge).
+        const savedId = response.headers.get('X-Application-Id') || undefined;
+        if (savedId) setLastSavedId(savedId);
+        logEvent('download', savedId); // track PDF download/generation
+        refreshBalance(); // RM3 was deducted server-side
       } else if (response.status === 402) {
         const err = await response.json();
         alert(

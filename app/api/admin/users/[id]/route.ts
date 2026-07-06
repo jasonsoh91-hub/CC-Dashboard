@@ -49,6 +49,15 @@ export async function DELETE(
   }
 
   const admin = createAdminClient();
+
+  // Remove the user's stored PDFs first (DB rows cascade-delete, storage objects don't).
+  const { data: files } = await admin.storage.from('application-pdfs').list(id);
+  if (files && files.length) {
+    await admin.storage
+      .from('application-pdfs')
+      .remove(files.map((f) => `${id}/${f.name}`));
+  }
+
   const { error } = await admin.auth.admin.deleteUser(id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 

@@ -20,6 +20,7 @@ import {
   listTopupRequests,
   createTeam,
   updateTeam,
+  setTeamManager,
   deleteTeam,
   assignMember,
   removeMember,
@@ -82,7 +83,19 @@ export default function TeamPage() {
     }
   };
 
-  const pending = requests.filter((r) => r.status === 'pending');
+  // Which team ids the current user oversees (admin: all; manager: teams they manage).
+  const myTeamIds = new Set(
+    (role === 'admin' ? teams : teams.filter((t) => t.manager_id === uid)).map((t) => t.id)
+  );
+  const teamIdByUser: Record<string, string | null> = Object.fromEntries(
+    profiles.map((p) => [p.id, p.team_id])
+  );
+  // Managers only see/approve requests from members of their own team(s).
+  const pending = requests.filter(
+    (r) =>
+      r.status === 'pending' &&
+      (role === 'admin' || myTeamIds.has(teamIdByUser[r.user_id] ?? ''))
+  );
   const managers = profiles.filter((p) => p.role === 'manager' || p.role === 'admin');
 
   // Which teams to show: admin -> all; manager -> teams they manage.
@@ -214,7 +227,7 @@ export default function TeamPage() {
                       <span className="text-slate-500">Manager:</span>
                       <Select
                         value={team.manager_id ?? ''}
-                        onValueChange={(v) => v && guard(() => updateTeam(team.id, { manager_id: v as string }))}
+                        onValueChange={(v) => v && guard(() => setTeamManager(team.id, v as string))}
                       >
                         <SelectTrigger className="w-56 h-7"><SelectValue placeholder="—" /></SelectTrigger>
                         <SelectContent>

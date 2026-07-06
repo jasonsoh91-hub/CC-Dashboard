@@ -52,14 +52,28 @@ export async function listTopupRequests(): Promise<TopupRequest[]> {
 }
 
 // --- admin: team + membership management (RLS-gated) ---
-export async function createTeam(name: string, managerId: string | null): Promise<void> {
-  const { error } = await db().from('teams').insert({ name, manager_id: managerId });
+export async function createTeam(name: string, managerId: string | null): Promise<string> {
+  const { data, error } = await db()
+    .from('teams')
+    .insert({ name, manager_id: managerId })
+    .select('id')
+    .single();
   if (error) throw error;
+  const id = data.id as string;
+  // Make the manager a member so their own generates draw from the team pool.
+  if (managerId) await assignMember(managerId, id);
+  return id;
 }
 
 export async function updateTeam(id: string, patch: Partial<Pick<Team, 'name' | 'manager_id'>>): Promise<void> {
   const { error } = await db().from('teams').update(patch).eq('id', id);
   if (error) throw error;
+}
+
+// Change a team's manager and add them as a member of that team.
+export async function setTeamManager(teamId: string, managerId: string): Promise<void> {
+  await updateTeam(teamId, { manager_id: managerId });
+  await assignMember(managerId, teamId);
 }
 
 export async function assignMember(userId: string, teamId: string | null): Promise<void> {

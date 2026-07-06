@@ -122,11 +122,50 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Persist the application + PDF server-side (atomic with the charge, reliable —
+    // avoids the "charged but no history" case when a browser save fails).
+    let applicationId = '';
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const d = validatedData as any;
+        const { data: row, error: insErr } = await supabase
+          .from('applications')
+          .insert({
+            user_id: user.id,
+            applicant_name: d.name_as_per_ic || d.name || null,
+            ic_number: d.mykad_number || d.ic_number || null,
+            bank_id: d.bank_id || null,
+            card_type: d.card_type || null,
+            status: 'generated',
+            data: d,
+          })
+          .select('id')
+          .single();
+        if (insErr) throw insErr;
+        applicationId = row.id as string;
+
+        const path = `${user.id}/${applicationId}.pdf`;
+        const { error: upErr } = await supabase.storage
+          .from('application-pdfs')
+          .upload(path, Buffer.from(pdfBytes), { contentType: 'application/pdf', upsert: true });
+        if (!upErr) {
+          await supabase.from('applications').update({ pdf_path: path }).eq('id', applicationId);
+        } else {
+          console.error('[PDF API] PDF upload failed:', upErr.message);
+        }
+      }
+    } catch (saveErr) {
+      // Non-fatal: user paid and gets the PDF; history row may be missing. Logged for follow-up.
+      console.error('[PDF API] save failed:', saveErr instanceof Error ? saveErr.message : saveErr);
+    }
+
     // Return the PDF as a downloadable file
     return new NextResponse(Buffer.from(pdfBytes), {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="cc-application-${validatedData.mykad_number || 'draft'}.pdf"`,
+        'X-Application-Id': applicationId,
       },
     });
   } catch (error) {
