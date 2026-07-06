@@ -67,6 +67,11 @@ export async function assignMember(userId: string, teamId: string | null): Promi
   if (error) throw error;
 }
 
+export async function deleteTeam(id: string): Promise<void> {
+  const { error } = await db().from('teams').delete().eq('id', id);
+  if (error) throw error;
+}
+
 // --- RPC wrappers (SECURITY DEFINER enforces authorization) ---
 async function rpc(fn: string, args: Record<string, unknown>) {
   const { data, error } = await db().rpc(fn, args);
@@ -93,3 +98,7 @@ export const managerTopupPool = (amount: number, note?: string) =>
 
 export const approveTopup = (requestId: string, approve: boolean) =>
   rpc('approve_topup', { p_request: requestId, p_approve: approve });
+
+// Manager/admin removes a member from their team (RPC — managers can't edit profiles via RLS).
+export const removeMember = (memberId: string) =>
+  rpc('remove_member', { p_member: memberId });

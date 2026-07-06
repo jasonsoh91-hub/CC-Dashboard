@@ -20,7 +20,9 @@ import {
   listTopupRequests,
   createTeam,
   updateTeam,
+  deleteTeam,
   assignMember,
+  removeMember,
   setTeamMode,
   allocateCredit,
   adminTopup,
@@ -172,18 +174,61 @@ export default function TeamPage() {
           return (
             <Card key={team.id} className="mb-6">
               <CardHeader>
-                <CardTitle className="text-lg flex items-center justify-between">
+                <CardTitle className="text-lg flex items-center justify-between gap-2">
                   <span>{team.name}</span>
-                  <span className="text-sm font-normal text-slate-500">
-                    Pool: RM{Number(team.balance).toFixed(2)}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-normal text-slate-500">
+                      Pool: RM{Number(team.balance).toFixed(2)}
+                    </span>
+                    {role === 'admin' && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            const name = prompt('Rename team:', team.name);
+                            if (name && name.trim()) guard(() => updateTeam(team.id, { name: name.trim() }));
+                          }}
+                        >
+                          Rename
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => {
+                            if (confirm(`Delete team "${team.name}"? Members become unassigned; pool balance is lost.`))
+                              guard(() => deleteTeam(team.id));
+                          }}
+                        >
+                          Delete team
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex flex-wrap items-center gap-3 text-sm">
-                  <span className="text-slate-500">
-                    Manager: {team.manager_id ? emailById[team.manager_id] || '—' : '—'}
-                  </span>
+                  {role === 'admin' ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-500">Manager:</span>
+                      <Select
+                        value={team.manager_id ?? ''}
+                        onValueChange={(v) => v && guard(() => updateTeam(team.id, { manager_id: v as string }))}
+                      >
+                        <SelectTrigger className="w-56 h-7"><SelectValue placeholder="—" /></SelectTrigger>
+                        <SelectContent>
+                          {managers.map((m) => (
+                            <SelectItem key={m.id} value={m.id}>{m.email}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ) : (
+                    <span className="text-slate-500">
+                      Manager: {team.manager_id ? emailById[team.manager_id] || '—' : '—'}
+                    </span>
+                  )}
                   <div className="flex items-center gap-2">
                     <span>Mode:</span>
                     <Select value={team.credit_mode} onValueChange={(v) => v && guard(() => setTeamMode(team.id, v as 'pool' | 'individual'))}>
@@ -254,11 +299,19 @@ export default function TeamPage() {
                                   Top up
                                 </Button>
                               )}
-                              {role === 'admin' && (
-                                <Button size="sm" variant="destructive" onClick={() => guard(() => assignMember(m.id, null))}>
-                                  Remove
-                                </Button>
+                              {role === 'admin' && teams.length > 1 && (
+                                <Select onValueChange={(v) => v && guard(() => assignMember(m.id, v as string))}>
+                                  <SelectTrigger className="w-28 h-7"><SelectValue placeholder="Move to" /></SelectTrigger>
+                                  <SelectContent>
+                                    {teams.filter((t) => t.id !== team.id).map((t) => (
+                                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
                               )}
+                              <Button size="sm" variant="destructive" onClick={() => guard(() => removeMember(m.id))}>
+                                Remove
+                              </Button>
                             </div>
                           </td>
                         </tr>
