@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,6 +12,9 @@ import { Checkbox } from '@/components/ui/checkbox';
 import type { ExtractedData, ApplicationFormData } from '@/lib/types';
 import { dropdownOptions } from '@/lib/types';
 import { BANKS, getCardsByBank } from '@/lib/banks';
+import { saveApplication, getMyProfile, logEvent, submitFeedback, type Role } from '@/lib/applications';
+import Link from 'next/link';
+import { createClient } from '@/lib/supabase/client';
 
 // Helper: Generate name for card (max 19 characters, smart truncate)
 // Always removes "BINTI"/"BIN" connectors for cleaner card names
@@ -93,6 +96,43 @@ export default function Dashboard() {
     tax_fatca_decl: true,
     agree_declaration: true,
   });
+
+  const [profile, setProfile] = useState<{ role: Role; email: string } | null>(null);
+  const [lastSavedId, setLastSavedId] = useState<string | null>(null);
+  useEffect(() => {
+    getMyProfile().then(setProfile).catch(() => {});
+  }, []);
+
+  // Report an extraction issue / error, linked to the last saved application if any.
+  const handleReportIssue = async () => {
+    const message = window.prompt(
+      'Describe the extraction error or issue:'
+    );
+    if (!message || !message.trim()) return;
+    try {
+      await submitFeedback(message.trim(), lastSavedId ?? undefined);
+      alert('Thanks — feedback logged.');
+    } catch (e) {
+      console.error('[Feedback] failed:', e);
+      alert('Could not submit feedback. Check console.');
+    }
+  };
+
+  // Hydrate form from a saved application picked on the History page.
+  useEffect(() => {
+    const stash = sessionStorage.getItem('cc-reload-application');
+    if (!stash) return;
+    sessionStorage.removeItem('cc-reload-application');
+    try {
+      const saved = JSON.parse(stash) as ApplicationFormData;
+      setFormData(saved);
+      const bankId = saved.bank_id || 'bank_muamalat';
+      setSelectedBank(bankId);
+      setAvailableCards(getCardsByBank(bankId));
+    } catch (e) {
+      console.error('[Reload] Failed to hydrate saved application:', e);
+    }
+  }, []);
 
   // Handle bank change - update available cards and reset card_type
   const handleBankChange = (bankId: string) => {
@@ -229,6 +269,7 @@ export default function Dashboard() {
         }
 
         setFormData(mappedData);
+        logEvent('extract'); // track extraction usage
         console.log('📝 Form data updated:', mappedData);
         console.log('🏢 Mapped employer_name:', mappedData.employer_name);
         console.log('🏢 Mapped hr_email:', mappedData.hr_email);
@@ -275,6 +316,16 @@ export default function Dashboard() {
         a.click();
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
+
+        // Persist application + PDF to Supabase (non-blocking for the download).
+        try {
+          const savedId = await saveApplication(formData, blob);
+          setLastSavedId(savedId);
+          logEvent('download', savedId); // track PDF download/generation
+        } catch (saveErr) {
+          console.error('[Save] Failed to save application:', saveErr);
+          alert('PDF generated, but saving to history failed. Check console.');
+        }
       } else {
         const errorText = await response.text();
         console.error('[PDF] Server error response:', errorText);
@@ -594,13 +645,42 @@ export default function Dashboard() {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
       <div className="container mx-auto px-4 py-8 max-w-6xl">
         {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-2">
-            Bank Muamalat Credit Card Application
-          </h1>
-          <p className="text-slate-600 dark:text-slate-400">
-            AI-powered credit card application processing dashboard
-          </p>
+        <div className="mb-6 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-2">
+              Bank Muamalat Credit Card Application
+            </h1>
+            <p className="text-slate-600 dark:text-slate-400">
+              AI-powered credit card application processing dashboard
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {profile && (
+              <span className="text-xs px-2 py-1 rounded-md bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200">
+                {profile.email} · {profile.role}
+              </span>
+            )}
+            {profile?.role === 'admin' && (
+              <Link href="/admin" className={buttonVariants({ variant: 'outline' })}>
+                Admin
+              </Link>
+            )}
+            <Link href="/history" className={buttonVariants({ variant: 'outline' })}>
+              History
+            </Link>
+            <Button variant="outline" onClick={handleReportIssue}>
+              Report issue
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={async () => {
+                await createClient().auth.signOut();
+                window.location.href = '/login';
+              }}
+            >
+              Sign out
+            </Button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
