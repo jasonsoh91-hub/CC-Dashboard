@@ -97,11 +97,27 @@ export async function POST(request: NextRequest) {
       console.warn('[PDF API] Blanked invalid fields before export:', blanked);
     }
 
+    // Resolve the logged-in agent's details from their profile and inject them
+    // server-side (client can't spoof these) so they auto-fill the PDF.
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('agent_name, agent_ic, agent_staff_id')
+        .eq('id', user.id)
+        .single();
+      if (profile) {
+        (validatedData as any).agent_name = profile.agent_name ?? null;
+        (validatedData as any).agent_ic = profile.agent_ic ?? null;
+        (validatedData as any).agent_staff_id = profile.agent_staff_id ?? null;
+      }
+    }
+
     // Generate the PDF (cheap, local) before charging so we only bill on success.
     const pdfBytes = await fillPdfForm(validatedData as any);
 
     // Charge RM3 to the user's team pool or individual balance (atomic, server-side).
-    const supabase = await createClient();
     const { data: charge, error: chargeErr } = await supabase.rpc('charge_generate', {
       p_cost: FORM_COST,
     });
@@ -126,7 +142,6 @@ export async function POST(request: NextRequest) {
     // avoids the "charged but no history" case when a browser save fails).
     let applicationId = '';
     try {
-      const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         const d = validatedData as any;
         const { data: row, error: insErr } = await supabase

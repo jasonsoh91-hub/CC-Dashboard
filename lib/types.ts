@@ -216,6 +216,12 @@ export const ApplicationFormDataSchema = ExtractedDataSchema.extend({
   financing_limit_type: z.enum(['specified', 'unspecified']).optional().nullable(),
   specified_financing_limit: z.string().optional().nullable(), // RM amount if specified
 
+  // Agent / Sales Executive Info — filled server-side from the logged-in
+  // user's profile (registered by admin), not entered per application.
+  agent_name: z.string().optional().nullable(),
+  agent_ic: z.string().optional().nullable(),
+  agent_staff_id: z.string().optional().nullable(),
+
   // Sales Executive Info (For BMMB Use Only)
   sales_exec_name: z.string().optional().nullable(),
   sales_exec_ic: z.string().optional().nullable(),

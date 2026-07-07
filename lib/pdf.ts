@@ -289,15 +289,13 @@ async function fillBankMuamalatForm(pdfBytes: Buffer, data: ApplicationFormData)
     setCheck('Agree Declare', true);
   }
 
-  // ==================== SALES EXECUTIVE INFO (For BMMB Use Only) ====================
-  setText('Sales Exec Name', data.sales_exec_name);
-  setText('Sales Exec IC', data.sales_exec_ic);
-  setText('Sales Exec Staff ID', data.sales_exec_staff_id);
-  setText('Sales Exec Email', data.sales_exec_email);
-  setText('Branch Name', data.branch_name);
-  setText('Branch Tel', data.branch_tel_no);
-  setText('Branch Manager Name', data.branch_manager_name);
-  setText('Branch Manager Email', data.branch_manager_email);
+  // ==================== AGENT / SALES EXECUTIVE INFO ====================
+  // Field names match the "Agent Name / Agent IC / Staff ID" fields added to
+  // the Muamalat template. Values come from the logged-in user's profile,
+  // injected server-side in app/api/generate-pdf/route.ts.
+  setText('Agent Name', data.agent_name);
+  setText('Agent IC', data.agent_ic);
+  setText('Staff ID', data.agent_staff_id);
 
   // ==================== SIGNATURE DATES ====================
   const today = new Date().toLocaleDateString('en-GB');

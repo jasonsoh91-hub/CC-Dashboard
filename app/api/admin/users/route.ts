@@ -13,7 +13,7 @@ export async function GET() {
 
   const { data: profiles, error } = await admin
     .from('profiles')
-    .select('id, email, role, created_at')
+    .select('id, email, role, created_at, agent_name, agent_ic, agent_staff_id')
     .order('created_at', { ascending: true });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
   const guard = await requireAdmin();
   if (!guard.ok) return NextResponse.json({ error: 'forbidden' }, { status: guard.status });
 
-  const { email, password, role } = await request.json();
+  const { email, password, role, agent_name, agent_ic, agent_staff_id } = await request.json();
 
   if (!email || !password || !['admin', 'manager', 'user'].includes(role)) {
     return NextResponse.json({ error: 'email, password, valid role required' }, { status: 400 });
@@ -55,10 +55,16 @@ export async function POST(request: NextRequest) {
   });
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
-  // Trigger created the profile as 'user'; set the requested role.
+  // Trigger created the profile as 'user'; set role + agent details.
   const { error: roleErr } = await admin
     .from('profiles')
-    .update({ role, email })
+    .update({
+      role,
+      email,
+      agent_name: agent_name || null,
+      agent_ic: agent_ic || null,
+      agent_staff_id: agent_staff_id || null,
+    })
     .eq('id', created.user.id);
   if (roleErr) return NextResponse.json({ error: roleErr.message }, { status: 500 });
 

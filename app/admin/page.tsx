@@ -23,6 +23,9 @@ type AdminUser = {
   role: 'admin' | 'manager' | 'user';
   created_at: string;
   extractions: number;
+  agent_name: string | null;
+  agent_ic: string | null;
+  agent_staff_id: string | null;
 };
 
 type Stats = {
@@ -47,6 +50,9 @@ export default function AdminPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<'admin' | 'manager' | 'user'>('user');
+  const [agentName, setAgentName] = useState('');
+  const [agentIc, setAgentIc] = useState('');
+  const [agentStaffId, setAgentStaffId] = useState('');
   const [creating, setCreating] = useState(false);
 
   const loadFeedback = async () => {
@@ -93,7 +99,14 @@ export default function AdminPage() {
     const res = await fetch('/api/admin/users', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, role }),
+      body: JSON.stringify({
+        email,
+        password,
+        role,
+        agent_name: agentName,
+        agent_ic: agentIc,
+        agent_staff_id: agentStaffId,
+      }),
     });
     const json = await res.json();
     setCreating(false);
@@ -104,7 +117,26 @@ export default function AdminPage() {
     setEmail('');
     setPassword('');
     setRole('user');
+    setAgentName('');
+    setAgentIc('');
+    setAgentStaffId('');
     loadAll();
+  };
+
+  const editAgent = async (u: AdminUser) => {
+    const agent_name = window.prompt(`Agent Name for ${u.email}:`, u.agent_name || '');
+    if (agent_name === null) return;
+    const agent_ic = window.prompt(`Agent IC for ${u.email}:`, u.agent_ic || '');
+    if (agent_ic === null) return;
+    const agent_staff_id = window.prompt(`Staff ID for ${u.email}:`, u.agent_staff_id || '');
+    if (agent_staff_id === null) return;
+    const res = await fetch(`/api/admin/users/${u.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agent_name, agent_ic, agent_staff_id }),
+    });
+    if (res.ok) loadAll();
+    else setError((await res.json()).error || 'Agent update failed');
   };
 
   const changeRole = async (id: string, newRole: string) => {
@@ -219,6 +251,18 @@ export default function AdminPage() {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="an">Agent Name</Label>
+                <Input id="an" value={agentName} onChange={(e) => setAgentName(e.target.value)} placeholder="on PDF" />
+              </div>
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="aic">Agent IC</Label>
+                <Input id="aic" value={agentIc} onChange={(e) => setAgentIc(e.target.value)} placeholder="on PDF" />
+              </div>
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="asi">Staff ID</Label>
+                <Input id="asi" value={agentStaffId} onChange={(e) => setAgentStaffId(e.target.value)} placeholder="on PDF" />
+              </div>
               <Button type="submit" disabled={creating}>
                 {creating ? 'Creating…' : 'Create'}
               </Button>
@@ -237,6 +281,7 @@ export default function AdminPage() {
                 <tr className="text-left text-slate-500 border-b">
                   <th className="py-2 pr-4">Email</th>
                   <th className="py-2 pr-4">Role</th>
+                  <th className="py-2 pr-4">Agent (Name / IC / Staff ID)</th>
                   <th className="py-2 pr-4">Extractions</th>
                   <th className="py-2 pr-4">Downloads</th>
                   <th className="py-2 pr-4"></th>
@@ -256,6 +301,11 @@ export default function AdminPage() {
                         </SelectContent>
                       </Select>
                     </td>
+                    <td className="py-2 pr-4 text-xs text-slate-600 dark:text-slate-300">
+                      {u.agent_name || u.agent_ic || u.agent_staff_id
+                        ? `${u.agent_name || '—'} / ${u.agent_ic || '—'} / ${u.agent_staff_id || '—'}`
+                        : <span className="text-amber-600">not set</span>}
+                    </td>
                     <td className="py-2 pr-4 font-medium">
                       {usageByEmail[u.email]?.extractions ?? 0}
                     </td>
@@ -264,6 +314,9 @@ export default function AdminPage() {
                     </td>
                     <td className="py-2 pr-4">
                       <div className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={() => editAgent(u)}>
+                          Agent
+                        </Button>
                         <Button variant="outline" size="sm" onClick={() => resetPassword(u.id, u.email)}>
                           Reset PW
                         </Button>
