@@ -206,6 +206,46 @@ export async function getMyProfile(): Promise<{ role: Role; email: string } | nu
   return { role: (data?.role as Role) ?? 'user', email: data?.email ?? user.email ?? '' };
 }
 
+// Read the logged-in user's own agent details (self-service editing).
+export async function getMyAgent(): Promise<{
+  agent_name: string;
+  agent_ic: string;
+  agent_staff_id: string;
+} | null> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+  const { data } = await supabase
+    .from('profiles')
+    .select('agent_name, agent_ic, agent_staff_id')
+    .eq('id', user.id)
+    .single();
+  return {
+    agent_name: data?.agent_name ?? '',
+    agent_ic: data?.agent_ic ?? '',
+    agent_staff_id: data?.agent_staff_id ?? '',
+  };
+}
+
+// Update the logged-in user's own agent details via a column-scoped RPC
+// (RLS blocks direct self-update to prevent role escalation).
+export async function updateMyAgent(a: {
+  agent_name: string;
+  agent_ic: string;
+  agent_staff_id: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  const supabase = createClient();
+  const { error } = await supabase.rpc('update_my_agent', {
+    p_name: a.agent_name,
+    p_ic: a.agent_ic,
+    p_staff_id: a.agent_staff_id,
+  });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
 // Map of user_id -> email, for owner display (admin/manager only; RLS-gated).
 export async function getOwnerEmails(): Promise<Record<string, string>> {
   const supabase = createClient();

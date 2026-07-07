@@ -699,6 +699,9 @@ export default function Dashboard() {
             <Link href="/history" className={buttonVariants({ variant: 'outline' })}>
               History
             </Link>
+            <Link href="/account" className={buttonVariants({ variant: 'outline' })}>
+              Account
+            </Link>
             <Button variant="outline" onClick={handleReportIssue}>
               Report issue
             </Button>
