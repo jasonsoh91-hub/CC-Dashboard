@@ -302,6 +302,14 @@ async function fillBankMuamalatForm(pdfBytes: Buffer, data: ApplicationFormData)
   setText('Main Name', data.name_as_per_ic);
   setText('Main Date', today);
 
+  // Bake appearance streams so viewers that don't honor NeedAppearances
+  // (Preview, Adobe mobile) still render filled values for on-page fields.
+  try {
+    form.updateFieldAppearances();
+  } catch (e) {
+    console.warn('[PDF] updateFieldAppearances failed:', e);
+  }
+
   const filledPdfBytes = await pdfDoc.save();
   console.log('[PDF] PDF saved successfully');
   return new Uint8Array(filledPdfBytes);
