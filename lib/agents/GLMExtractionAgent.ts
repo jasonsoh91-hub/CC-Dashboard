@@ -108,7 +108,17 @@ Return this exact JSON structure:
   "emergency_phone": "emergency contact phone - from 'Emergency Contact:', 'Emergency Contact No:', 'Emergency Tel:' ONLY - DO NOT use applicant's HP number",
   "emergency_relation": "relationship to emergency contact",
   "residence_status": "raw residence status from 'Residential Status:' / 'Residental status:' — e.g. 'Family', 'Owned', 'Rented', 'Stay with parents'",
-  "nature_of_business": "raw industry / nature of business from 'Nature of business:' / 'Nature business:' — e.g. 'Legal Service', 'Banking', 'Retail', 'Manufacturing'"
+  "nature_of_business": "raw industry / nature of business from 'Nature of business:' / 'Nature business:' — e.g. 'Legal Service', 'Banking', 'Retail', 'Manufacturing'",
+  "monthly_income": "APPLICANT'S OWN gross monthly income/salary — from 'Income:', 'Salary:', 'Gaji:', 'Pendapatan:', 'Monthly income'. Keep the raw amount as written (e.g. 'RM8000', '8k', '12000', '5 ribu'). DO NOT use spouse/husband/wife income. Null if not the applicant's own.",
+  "other_income": "applicant's ADDITIONAL/side income from 'Other income', 'Side income', 'Pendapatan lain', 'part time income' — raw amount. Null if none.",
+  "monthly_commitment": "applicant's total monthly commitments/loan repayments/expenses from 'Commitment:', 'Tanggungan:', 'Monthly commitment', 'Loan:' — raw amount. Null if none.",
+  "salutation": "title from name/context — one of: Dr, Haji, Hajjah, Mr, Mrs, Ms, Prof. Infer from 'Dr'/'Dato'/'Encik'(Mr)/'Puan'(Mrs)/'Cik'(Ms) or name markers 'Bin'→Mr, 'Binti'→Ms. Null if unclear.",
+  "marital_status": "marital status — one of: Single, Married, Divorced, Others. Map BM: 'Bujang'→Single, 'Kahwin'/'Berkahwin'/'dah kawin'→Married, 'Bercerai'/'Duda'/'Janda'→Divorced. Null if not stated.",
+  "race": "race/ethnicity if EXPLICITLY stated — one of: Malay, Chinese, Indian, Punjabi, Others. Map BM: 'Melayu'→Malay, 'Cina'→Chinese, 'India'→Indian. Null if not stated (do NOT guess from name here).",
+  "religion": "religion if EXPLICITLY stated — one of: Islam, Christian, Buddhist, Hindu, Sikhism, Atheist, Others. Map 'Muslim'→Islam. Null if not stated.",
+  "employment_type": "employment type — one of: Employer, Government Employee, Private Employee, Self Employed. Infer: government/civil servant/kerajaan→Government Employee; private company employee/swasta→Private Employee; business owner/self-employed/'bisnes sendiri'/'buat sendiri'/freelance→Self Employed; hires staff/'majikan'→Employer. Null if unclear.",
+  "employment_status": "employment status — one of: Permanent, Contract, Pensioner, Part Timer, Others. Map: 'tetap'/'confirmed'/'full time'→Permanent, 'kontrak'→Contract, 'pesara'/'retired'→Pensioner, 'sambilan'/'part time'→Part Timer. Null if not stated.",
+  "business_classification": "company legal type if inferable from employer name suffix or stated — one of: Private Limited, Limited, Partnership, Public Listed, Multinational Corporation, Government, Sole Proprietorship, Others. Map: 'Sdn Bhd'→Private Limited, 'Bhd'(alone)→Limited, 'PLC'/'public listed'→Public Listed, 'Enterprise'/'Trading'/'sole proprietor'→Sole Proprietorship, government dept→Government. IMPORTANT: if the person is self-employed / runs their own small business ('bisnes sendiri', 'buat sendiri', freelance) AND there is NO 'Sdn Bhd' or 'Bhd' in the employer name, use 'Sole Proprietorship'. Do NOT default to 'Private Limited' unless 'Sdn Bhd' is present. Null if unknown."
 }
 
 CRITICAL PHONE NUMBER EXTRACTION RULES:
@@ -256,20 +266,73 @@ CRITICAL mappings for Malaysian forms:
       residence_status: this.normalizeResidenceStatus(residenceRaw),
       nature_of_business: natureRaw,
       employment_sector: this.mapSector(natureRaw) ?? undefined,
+      // Income — parse "RM8k", "12,000", "5 ribu" → plain numeric string.
+      monthly_income: this.parseAmount(clean(data.monthly_income)),
+      other_income: this.parseAmount(clean(data.other_income)),
+      monthly_commitment: this.parseAmount(clean(data.monthly_commitment)),
+      // Raw enum-ish attributes — the API route normalises these to app enums.
+      salutation: clean(data.salutation),
+      marital_status: clean(data.marital_status),
+      race: clean(data.race),
+      religion: clean(data.religion),
+      employment_type: clean(data.employment_type),
+      employment_status: clean(data.employment_status),
+      business_classification: this.resolveBusinessClass(
+        clean(data.business_classification),
+        clean(data.employment_type),
+        clean(data.employer_name),
+      ),
     };
+  }
+
+  // Deterministic correction for the LLM's habit of defaulting company type to
+  // "Private Limited". Self-employed people without a registered "Sdn Bhd"/"Bhd"
+  // company are Sole Proprietorships; an explicit "Sdn Bhd" is Private Limited.
+  private resolveBusinessClass(
+    rawBiz: string | null,
+    empType: string | null,
+    employer: string | null,
+  ): string | null {
+    const emp = (employer || '').toLowerCase();
+    const hasSdnBhd = /\bsdn\.?\s*bhd\b|\bsendirian\s*berhad\b/i.test(emp);
+    const hasBhd = /\bbhd\b|\bberhad\b/i.test(emp);
+    const selfEmployed = !!empType && /self\s*employed/i.test(empType);
+    if (hasSdnBhd) return 'Private Limited';
+    if (/\benterprise\b|\btrading\b|\bhardware\b|\bkedai\b/i.test(emp)) return 'Sole Proprietorship';
+    if (selfEmployed && !hasBhd) return 'Sole Proprietorship';
+    return rawBiz;
+  }
+
+  // Parse a Malaysian money amount into a plain integer string.
+  // Handles "RM8,000", "8k", "8K", "5 ribu", "1.2 juta", "RM 12000 sebulan".
+  private parseAmount(raw: string | null): string | null {
+    if (!raw) return null;
+    const s = String(raw).toLowerCase();
+    const m = s.match(/(\d[\d,]*(?:\.\d+)?)\s*(k|ribu|rb|juta|jt|mil|m)?\b/);
+    if (!m) return null;
+    let n = parseFloat(m[1].replace(/,/g, ''));
+    if (!isFinite(n)) return null;
+    const unit = m[2];
+    if (unit === 'k' || unit === 'ribu' || unit === 'rb') n *= 1_000;
+    else if (unit === 'juta' || unit === 'jt' || unit === 'mil' || unit === 'm') n *= 1_000_000;
+    if (n <= 0 || n > 100_000_000) return null; // sanity bounds
+    return String(Math.round(n));
   }
 
   private normalizeResidenceStatus(raw: string | null): string | null {
     if (!raw) return null;
     const v = raw.toLowerCase().trim();
-    // Dropdown options: 'Owned', 'Rented', 'With Parents', 'Others'
-    if (/^(family|stay\s*with\s*parents?|with\s*parents?|live\s*with\s*parents?|parents?)$/i.test(v)) {
+    // Dropdown options: 'Owned', 'Rented', 'With Parents', 'Others'.
+    // Word-boundaried so "parents" is never mistaken for "rent". BM terms
+    // included (sewa=rent, milik sendiri=owned, ibu bapa=with parents).
+    // Check "with parents" first (most specific).
+    if (/\b(family|parents?|ibu\s*bapa|tinggal|duduk)\b/i.test(v)) {
       return 'With Parents';
     }
-    if (/^(own|owned|own\s*house|self\s*owned|mortgage|mortgaged)/i.test(v)) {
+    if (/\b(own|owned|self\s*owned|milik\s*sendiri|sendiri|mortgage|mortgaged)\b/i.test(v)) {
       return 'Owned';
     }
-    if (/^(rent|rented|renting|tenant)/i.test(v)) {
+    if (/\b(rent|rented|renting|tenant|sewa|menyewa)\b/i.test(v)) {
       return 'Rented';
     }
     // Pass through if user already used a canonical value

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { fillPdfForm } from '@/lib/pdf';
 import { ApplicationFormDataSchema } from '@/lib/types';
 import { createClient } from '@/lib/supabase/server';
+import { normalizeApplicationEnums } from '@/lib/normalize-enums';
 
 const FORM_COST = 3; // RM3 per generated form
 
@@ -15,39 +16,10 @@ export async function POST(request: NextRequest) {
     console.log('[PDF API] agree_tawarruq:', body.agree_tawarruq);
     console.log('[PDF API] gender:', body.gender, 'nationality:', body.nationality);
 
-    // Normalize education_level: map common AI-extracted variants to valid enum values
-    if (body.education_level) {
-      const eduMap: Record<string, string> = {
-        'mba': 'Masters',
-        'master': 'Masters',
-        "master's": 'Masters',
-        'masters': 'Masters',
-        'msc': 'Masters',
-        'master of business administration': 'Masters',
-        'phd': 'Doctorate',
-        'doctorate': 'Doctorate',
-        'doctoral': 'Doctorate',
-        'bachelor': 'Degree',
-        "bachelor's": 'Degree',
-        'degree': 'Degree',
-        'diploma': 'Diploma',
-        'stpm': 'Secondary Education',
-        'spm': 'Secondary Education',
-        'secondary': 'Secondary Education',
-        'high school': 'Secondary Education',
-        'primary': 'Primary Education',
-        'professional': 'Professional Qualification',
-        'professional qualification': 'Professional Qualification',
-        'aca': 'Professional Qualification',
-        'acca': 'Professional Qualification',
-        'cfa': 'Professional Qualification',
-      };
-      const validLevels = ['Primary Education', 'Secondary Education', 'Diploma', 'Degree', 'Masters', 'Doctorate', 'Professional Qualification'];
-      const raw = String(body.education_level).trim();
-      if (!validLevels.includes(raw)) {
-        body.education_level = eduMap[raw.toLowerCase()] ?? 'Secondary Education';
-      }
-    }
+    // Standardise messy extracted values (e.g. "cina", "self-employed", "spm")
+    // to the app's enum values BEFORE Zod, so they aren't blanked as invalid and
+    // the corresponding PDF dropdowns are nearest-matched instead of left empty.
+    const normalizedBody = normalizeApplicationEnums(body);
 
     // Validate the incoming data. If any field fails validation, blank it
     // out and retry — so PDF export never gets stuck on a bad field.
@@ -92,7 +64,7 @@ export async function POST(request: NextRequest) {
       return { data: working, blanked };
     };
 
-    const { data: validatedData, blanked } = sanitizeAndParse(body);
+    const { data: validatedData, blanked } = sanitizeAndParse(normalizedBody);
     if (blanked.length) {
       console.warn('[PDF API] Blanked invalid fields before export:', blanked);
     }

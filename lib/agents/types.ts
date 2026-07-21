@@ -36,8 +36,19 @@ export interface ExtractedData {
   residence_status?: string | null;
   nature_of_business?: string | null;
   gender?: string;
-  business_classification?: string;
+  business_classification?: string | null;
   employment_sector?: string;
+  // Income (numeric string, RM, no separators)
+  monthly_income?: string | null;
+  other_income?: string | null;
+  monthly_commitment?: string | null;
+  // Personal / employment attributes (raw — route normalises to app enums)
+  salutation?: string | null;
+  marital_status?: string | null;
+  race?: string | null;
+  religion?: string | null;
+  employment_type?: string | null;
+  employment_status?: string | null;
 }
 
 export interface ValidationResult {

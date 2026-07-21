@@ -173,7 +173,7 @@ export default function Dashboard() {
         // Map extracted data to form fields
         const mappedData: ApplicationFormData = {
           card_type: formData.card_type,
-          salutation: result.data.name?.includes('Binti') ? 'Ms' : result.data.name?.includes('Bin') ? 'Mr' : undefined,
+          salutation: result.data.salutation || (result.data.name?.includes('Binti') ? 'Ms' : result.data.name?.includes('Bin') ? 'Mr' : undefined),
           name_as_per_ic: result.data.name,
           mykad_number: result.data.ic_number,
           hp_number: result.data.phone,
@@ -193,6 +193,19 @@ export default function Dashboard() {
           nationality: result.data.nationality || 'Malaysian',
           education_level: result.data.education_level,
           hr_email: result.data.work_email,
+          // Income + attributes now captured by extraction (route normalises
+          // enum-ish values to app enums; income is already a numeric string).
+          monthly_income: result.data.monthly_income,
+          other_income_source: result.data.other_income,
+          monthly_commitment: result.data.monthly_commitment,
+          residence_status: result.data.residence_status,
+          business_classification: result.data.business_classification,
+          employment_sector: result.data.employment_sector,
+          employment_type: result.data.employment_type,
+          employment_status: result.data.employment_status,
+          marital_status: result.data.marital_status,
+          race: result.data.race,
+          religion: result.data.religion,
           related_to_bmm_staff: false,
           agree_tawarruq: true,
           agree_unspecified: true,
@@ -218,31 +231,33 @@ export default function Dashboard() {
           mappedData.date_of_birth = `${day}/${month}/${fullYear}`;
         }
 
-        // Auto-detect gender from MyKad number (last digit: odd=male, even=female)
-        // This overrides salutation-based gender if IC is provided
+        // Gender from MyKad (last digit: odd=male, even=female) — authoritative
+        // when a 12-digit IC exists; else fall back to what extraction inferred.
         if (result.data.ic_number && result.data.ic_number.length === 12) {
           const cleanIc = result.data.ic_number.replace(/[^0-9]/g, '');
           const lastDigit = parseInt(cleanIc.charAt(11));
           mappedData.gender = (lastDigit % 2 === 1) ? 'Male' : 'Female';
           console.log('[Extraction] MyKad Gender - IC:', cleanIc, 'Last digit:', lastDigit, 'Gender:', mappedData.gender);
+        } else if (!mappedData.gender && result.data.gender) {
+          mappedData.gender = result.data.gender as 'Male' | 'Female';
         }
 
-        // Auto-detect race from name
-        if (result.data.name) {
+        // Race — only detect from name if extraction didn't already state it.
+        if (!mappedData.race && result.data.name) {
           const detectedRace = detectRaceFromName(result.data.name);
           if (detectedRace) {
             mappedData.race = detectedRace;
             console.log('[Extraction] Race Detection - Name:', result.data.name, 'Race:', detectedRace);
-            // Auto-set religion for Malay
-            if (detectedRace === 'Malay') {
-              mappedData.religion = 'Islam';
-              console.log('[Extraction] Race→Religion: Malay detected, set religion to Islam');
-            }
           }
         }
+        // Auto-set religion Islam for Malay when religion not already known.
+        if (!mappedData.religion && mappedData.race === 'Malay') {
+          mappedData.religion = 'Islam';
+          console.log('[Extraction] Race→Religion: Malay → Islam');
+        }
 
-        // Auto-detect marital status from emergency relation
-        if (result.data.emergency_relation) {
+        // Marital status — fall back to emergency relation only if not stated.
+        if (!mappedData.marital_status && result.data.emergency_relation) {
           const lowerRelation = result.data.emergency_relation.toLowerCase();
           if (lowerRelation.includes('spouse') || lowerRelation.includes('husband') || lowerRelation.includes('wife')) {
             mappedData.marital_status = 'Married';

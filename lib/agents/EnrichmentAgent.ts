@@ -33,8 +33,10 @@ export class EnrichmentAgent extends BaseAgent {
       confidence += 15;
     }
 
-    // Enrich business classification
-    if (data.occupation || data.position) {
+    // Enrich business classification only if the extractor didn't already
+    // determine one (extraction knows the employer suffix / self-employed
+    // context; this heuristic just defaults to "Private Limited" otherwise).
+    if (!data.business_classification && (data.occupation || data.position)) {
       const classification = this.classifyBusiness(data.occupation, data.position);
       if (classification) {
         enrichedData.business_classification = classification;
