@@ -433,8 +433,10 @@ export async function fillBankMuamalatV3Form(
   setText('Position  Jawatan', data.position);
   setDropdown('DropdownN4', data.employment_status, { category: 'employmentStatus', othersField: 'Text4' }); // Employment Status
   const tenure = parseTenure(data.length_of_service);
-  setText('Employment Sector  Sektor Pekerjaan', tenure.years);          // Length of Service — Years
-  setText('Employment Sector  Sektor Pekerjaan Months', tenure.months);  // Length of Service — Months
+  const yearsLabel = tenure.years ? `${tenure.years} year${tenure.years === '1' ? '' : 's'}` : '';
+  const monthsLabel = tenure.months ? `${tenure.months} month${tenure.months === '1' ? '' : 's'}` : '';
+  setText('Employment Sector  Sektor Pekerjaan', yearsLabel);          // Length of Service — Years (e.g. "2 years")
+  setText('Employment Sector  Sektor Pekerjaan Months', monthsLabel);  // Length of Service — Months (e.g. "1 month")
   setText('Text16', data.employment_sector);                // Employment Sector
   setDropdown('Dropdown4', data.business_classification, { category: 'business', othersField: 'TextBiz' });
   setText('Text22', data.office_number);                    // Tel No (O)
