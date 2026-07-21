@@ -326,6 +326,23 @@ export async function fillBankMuamalatV3Form(
     return { postcode: pc ? pc[1] : '', city, state };
   };
 
+  // Length of service comes as "2 years 1 month", "5 years", "6 months", or a
+  // bare number (assume years). The v3 form has separate Years and Months
+  // boxes, so split it.
+  const parseTenure = (s: string | null | undefined): { years: string; months: string } => {
+    const str = clean(s);
+    if (!str) return { years: '', months: '' };
+    const ym = str.match(/(\d+)\s*(?:years?|thn|tahun|yrs?)/i);
+    const mm = str.match(/(\d+)\s*(?:months?|bln|bulan|mths?)/i);
+    let years = ym ? ym[1] : '';
+    const months = mm ? mm[1] : '';
+    if (!years && !months) {
+      const bare = str.match(/^\s*(\d+)\s*$/); // lone number → years
+      if (bare) years = bare[1];
+    }
+    return { years, months };
+  };
+
   const nameForCard = (full: string) => {
     if (!full) return '';
     const MAX = 19;
@@ -415,7 +432,9 @@ export async function fillBankMuamalatV3Form(
   setText('Occupation  Pekerjaan', data.occupation);
   setText('Position  Jawatan', data.position);
   setDropdown('DropdownN4', data.employment_status, { category: 'employmentStatus', othersField: 'Text4' }); // Employment Status
-  setText('Employment Sector  Sektor Pekerjaan', data.length_of_service);       // Length of Service (years)
+  const tenure = parseTenure(data.length_of_service);
+  setText('Employment Sector  Sektor Pekerjaan', tenure.years);          // Length of Service — Years
+  setText('Employment Sector  Sektor Pekerjaan Months', tenure.months);  // Length of Service — Months
   setText('Text16', data.employment_sector);                // Employment Sector
   setDropdown('Dropdown4', data.business_classification, { category: 'business', othersField: 'TextBiz' });
   setText('Text22', data.office_number);                    // Tel No (O)
