@@ -500,11 +500,12 @@ export async function fillBankMuamalatV3Form(
 
   // ======================= I. FINANCING (Tawarruq) ======================
   if (data.agree_tawarruq) setCheck('CheckboxLink3', true);
-  // Check Box11: Specified=/Yes, Unspecified=/1
+  // Check Box11: Specified=/Yes, Unspecified=/1. Default to Unspecified unless
+  // the applicant explicitly chose a specified limit.
   if (data.financing_limit_type === 'specified') {
     setRadioState('Check Box11', 'Yes');
     setText('fill_10', noComma(data.specified_financing_limit));
-  } else if (data.financing_limit_type === 'unspecified') {
+  } else {
     setRadioState('Check Box11', '1');
   }
 
@@ -583,7 +584,7 @@ function reassertRadios(form: ReturnType<PDFDocument['getForm']>, data: Applicat
   set('Check Box16', data.related_to_bmm_staff ? '1' : '2');
 
   if (data.financing_limit_type === 'specified') set('Check Box11', 'Yes');
-  else if (data.financing_limit_type === 'unspecified') set('Check Box11', '1');
+  else set('Check Box11', '1'); // default Unspecified
 
   if (data.fatca_decl_1 != null) set('Check Box12', data.fatca_decl_1 ? '1' : 'Yes');
   if (data.fatca_decl_2 != null) set('Check Box13', data.fatca_decl_2 ? '2' : 'Yes');
