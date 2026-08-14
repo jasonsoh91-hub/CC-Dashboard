@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { OnboardingGate } from "@/components/onboarding-gate";
+import { LowBalanceNotice } from "@/components/low-balance-notice";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -30,8 +31,9 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         {children}
-        {/* Renders nothing unless the signed-in user still has to finish first-login setup. */}
+        {/* Both render nothing unless they apply to the signed-in user. */}
         <OnboardingGate />
+        <LowBalanceNotice />
       </body>
     </html>
   );

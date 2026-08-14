@@ -13,7 +13,7 @@ import type { ExtractedData, ApplicationFormData } from '@/lib/types';
 import { dropdownOptions } from '@/lib/types';
 import { BANKS, getCardsByBank } from '@/lib/banks';
 import { getMyProfile, getMyBalance, logEvent, submitFeedback, type Role } from '@/lib/applications';
-import { CREDIT_FLOOR, SUPPORT_WHATSAPP } from '@/lib/support';
+import { BALANCE_CHANGED_EVENT, CREDIT_FLOOR, SUPPORT_WHATSAPP } from '@/lib/support';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 
@@ -103,7 +103,13 @@ export default function Dashboard() {
   const [balance, setBalance] = useState<{ balance: number; source: 'team' | 'user' } | null>(null);
 
   const refreshBalance = () => {
-    getMyBalance().then(setBalance).catch(() => {});
+    getMyBalance()
+      .then((b) => {
+        setBalance(b);
+        // Let the low-balance reminder re-check straight after a charge.
+        window.dispatchEvent(new Event(BALANCE_CHANGED_EVENT));
+      })
+      .catch(() => {});
   };
 
   useEffect(() => {
