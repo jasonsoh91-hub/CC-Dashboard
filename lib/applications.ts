@@ -246,6 +246,48 @@ export async function updateMyAgent(a: {
   return { ok: true };
 }
 
+// First-login state: null onboarded_at means the welcome dialog hasn't been completed.
+// Returns null when signed out (or if migration 0010 isn't applied yet — in that case
+// the column is missing and we fail open rather than blocking everyone behind a dialog).
+export async function getMyOnboarding(): Promise<{
+  onboarded: boolean;
+  agent_name: string;
+  agent_ic: string;
+  agent_staff_id: string;
+} | null> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('onboarded_at, agent_name, agent_ic, agent_staff_id')
+    .eq('id', user.id)
+    .single();
+  if (error || !data) return null;
+  return {
+    onboarded: !!data.onboarded_at,
+    agent_name: data.agent_name ?? '',
+    agent_ic: data.agent_ic ?? '',
+    agent_staff_id: data.agent_staff_id ?? '',
+  };
+}
+
+// Finish the welcome dialog: store IC + agent ID and stamp onboarded_at.
+export async function completeOnboarding(a: {
+  agent_ic: string;
+  agent_staff_id: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  const supabase = createClient();
+  const { error } = await supabase.rpc('complete_onboarding', {
+    p_ic: a.agent_ic,
+    p_staff_id: a.agent_staff_id,
+  });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
 // Map of user_id -> email, for owner display (admin/manager only; RLS-gated).
 export async function getOwnerEmails(): Promise<Record<string, string>> {
   const supabase = createClient();

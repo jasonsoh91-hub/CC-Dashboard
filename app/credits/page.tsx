@@ -12,6 +12,7 @@ import {
   requestTopup,
   type CreditTx,
 } from '@/lib/applications';
+import { CREDIT_FLOOR, SUPPORT_WHATSAPP, SUPPORT_WHATSAPP_LINK } from '@/lib/support';
 
 export default function CreditsPage() {
   const [balance, setBalance] = useState<{ balance: number; source: 'team' | 'user' } | null>(null);
@@ -62,8 +63,32 @@ export default function CreditsPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-4xl font-bold">RM{(balance?.balance ?? 0).toFixed(2)}</div>
-            <p className="text-sm text-slate-500 mt-1">Each form generate costs RM2.</p>
+            <div
+              className={
+                'text-4xl font-bold ' + ((balance?.balance ?? 0) < 0 ? 'text-red-600' : '')
+              }
+            >
+              RM{(balance?.balance ?? 0).toFixed(2)}
+            </div>
+            <p className="text-sm text-slate-500 mt-1">
+              Each form generate costs RM2. You can keep generating down to RM
+              {CREDIT_FLOOR.toFixed(2)} (2 extra forms after you hit zero) — the shortfall is
+              settled by your next top-up.
+            </p>
+            {(balance?.balance ?? 0) < 2 && (
+              <p className="text-sm mt-3 rounded-md bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 px-3 py-2">
+                Running low. Request a top-up below, or WhatsApp{' '}
+                <a
+                  href={SUPPORT_WHATSAPP_LINK}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-semibold underline"
+                >
+                  {SUPPORT_WHATSAPP}
+                </a>
+                .
+              </p>
+            )}
           </CardContent>
         </Card>
 
@@ -85,7 +110,17 @@ export default function CreditsPage() {
             </form>
             {msg && <p className="text-sm mt-3 text-slate-600 dark:text-slate-300">{msg}</p>}
             <p className="text-xs text-slate-400 mt-2">
-              Online payment gateway coming soon. For now top-ups are approved manually by your manager/admin.
+              Online payment gateway coming soon. For now top-ups are approved manually — submit a
+              request above, or WhatsApp{' '}
+              <a
+                href={SUPPORT_WHATSAPP_LINK}
+                target="_blank"
+                rel="noreferrer"
+                className="font-medium text-emerald-700 dark:text-emerald-400 underline"
+              >
+                {SUPPORT_WHATSAPP}
+              </a>
+              .
             </p>
           </CardContent>
         </Card>

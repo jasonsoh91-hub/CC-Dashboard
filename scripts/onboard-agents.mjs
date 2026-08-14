@@ -4,6 +4,10 @@
  * Idempotent — safe to re-run. Existing accounts are not recreated and are only
  * topped up once (guarded by a ledger note tag).
  *
+ * Accounts are left with onboarded_at = null on purpose: the first time they sign
+ * in, components/onboarding-gate.tsx makes them confirm their IC + agent ID and
+ * replace the temporary password below.
+ *
  * The roster is PII (real names, personal emails, staff IDs) so it is NOT kept in
  * this repo. Pass a gitignored JSON file of
  *   [{ "name": "...", "email": "...", "staffId": "..." }, ...]

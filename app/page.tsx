@@ -13,6 +13,7 @@ import type { ExtractedData, ApplicationFormData } from '@/lib/types';
 import { dropdownOptions } from '@/lib/types';
 import { BANKS, getCardsByBank } from '@/lib/banks';
 import { getMyProfile, getMyBalance, logEvent, submitFeedback, type Role } from '@/lib/applications';
+import { CREDIT_FLOOR, SUPPORT_WHATSAPP } from '@/lib/support';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 
@@ -347,7 +348,11 @@ export default function Dashboard() {
       } else if (response.status === 402) {
         const err = await response.json();
         alert(
-          `Not enough credit to generate this form.\n\nCost: RM${err.cost}\nYour balance: RM${Number(err.balance).toFixed(2)}\n\nTop up on the Credits page.`
+          `Not enough credit to generate this form.\n\n` +
+            `Cost: RM${err.cost}\n` +
+            `Your balance: RM${Number(err.balance).toFixed(2)}\n` +
+            `You may go as low as RM${CREDIT_FLOOR.toFixed(2)} before generating is blocked.\n\n` +
+            `Request a top-up on the Credits page, or WhatsApp ${SUPPORT_WHATSAPP}.`
         );
         refreshBalance();
       } else {
@@ -692,7 +697,13 @@ export default function Dashboard() {
                     ? 'bg-red-100 text-red-700'
                     : 'bg-emerald-100 text-emerald-700')
                 }
-                title={balance.source === 'team' ? 'Team pool balance' : 'Your balance'}
+                title={
+                  balance.balance < 2
+                    ? `Low credit — top up on the Credits page or WhatsApp ${SUPPORT_WHATSAPP}`
+                    : balance.source === 'team'
+                      ? 'Team pool balance'
+                      : 'Your balance'
+                }
               >
                 RM{balance.balance.toFixed(2)}
                 {balance.source === 'team' ? ' (pool)' : ''}
