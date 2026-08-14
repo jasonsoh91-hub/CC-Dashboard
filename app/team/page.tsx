@@ -337,26 +337,52 @@ export default function TeamPage() {
           );
         })}
 
-        {/* Admin: unassigned users */}
+        {/* Admin: unassigned users. These have no team, so their credit is purely
+            individual — top up here rather than through a pool. */}
         {role === 'admin' && (
           <Card>
-            <CardHeader><CardTitle className="text-lg">Unassigned users</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle className="text-lg">Users without a team</CardTitle>
+              <p className="text-sm text-slate-500">
+                They spend from their own balance. Top up directly — no pool involved.
+              </p>
+            </CardHeader>
             <CardContent>
               {profiles.filter((p) => !p.team_id).length === 0 ? (
                 <p className="text-slate-500">Everyone is assigned.</p>
               ) : (
                 <div className="space-y-2">
                   {profiles.filter((p) => !p.team_id).map((p) => (
-                    <div key={p.id} className="flex items-center justify-between gap-3 border-b last:border-0 py-2 text-sm">
-                      <span>{p.email} ({p.role})</span>
-                      <Select onValueChange={(v) => v && guard(() => assignMember(p.id, v as string))}>
-                        <SelectTrigger className="w-48 h-7"><SelectValue placeholder="Assign to team" /></SelectTrigger>
-                        <SelectContent>
-                          {teams.map((t) => (
-                            <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                    <div key={p.id} className="flex flex-wrap items-center justify-between gap-3 border-b last:border-0 py-2 text-sm">
+                      <span>
+                        {p.email} ({p.role}){' · '}
+                        <span
+                          className={
+                            'font-medium ' + (Number(p.balance) < 2 ? 'text-red-600' : '')
+                          }
+                        >
+                          RM{Number(p.balance).toFixed(2)}
+                        </span>
+                      </span>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            const a = Number(prompt(`Top up RM to ${p.email}:`, '10'));
+                            if (a > 0) guard(() => adminTopup('user', p.id, a, 'admin top-up'));
+                          }}
+                        >
+                          Top up
+                        </Button>
+                        <Select onValueChange={(v) => v && guard(() => assignMember(p.id, v as string))}>
+                          <SelectTrigger className="w-40 h-8"><SelectValue placeholder="Assign to team" /></SelectTrigger>
+                          <SelectContent>
+                            {teams.map((t) => (
+                              <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
                   ))}
                 </div>
