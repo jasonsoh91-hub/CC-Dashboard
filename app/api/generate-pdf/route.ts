@@ -4,7 +4,7 @@ import { ApplicationFormDataSchema } from '@/lib/types';
 import { createClient } from '@/lib/supabase/server';
 import { normalizeApplicationEnums } from '@/lib/normalize-enums';
 
-const FORM_COST = 3; // RM3 per generated form
+const FORM_COST = 2; // RM2 per generated form
 
 export async function POST(request: NextRequest) {
   try {
@@ -89,7 +89,7 @@ export async function POST(request: NextRequest) {
     // Generate the PDF (cheap, local) before charging so we only bill on success.
     const pdfBytes = await fillPdfForm(validatedData as any);
 
-    // Charge RM3 to the user's team pool or individual balance (atomic, server-side).
+    // Charge RM2 to the user's team pool or individual balance (atomic, server-side).
     const { data: charge, error: chargeErr } = await supabase.rpc('charge_generate', {
       p_cost: FORM_COST,
     });

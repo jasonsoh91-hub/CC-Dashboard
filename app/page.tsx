@@ -343,7 +343,7 @@ export default function Dashboard() {
         const savedId = response.headers.get('X-Application-Id') || undefined;
         if (savedId) setLastSavedId(savedId);
         logEvent('download', savedId); // track PDF download/generation
-        refreshBalance(); // RM3 was deducted server-side
+        refreshBalance(); // RM2 was deducted server-side
       } else if (response.status === 402) {
         const err = await response.json();
         alert(
@@ -688,7 +688,7 @@ export default function Dashboard() {
               <span
                 className={
                   'text-xs px-2 py-1 rounded-md font-semibold ' +
-                  (balance.balance < 3
+                  (balance.balance < 2
                     ? 'bg-red-100 text-red-700'
                     : 'bg-emerald-100 text-emerald-700')
                 }

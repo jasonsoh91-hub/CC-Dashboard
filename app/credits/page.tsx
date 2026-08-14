@@ -63,7 +63,7 @@ export default function CreditsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-4xl font-bold">RM{(balance?.balance ?? 0).toFixed(2)}</div>
-            <p className="text-sm text-slate-500 mt-1">Each form generate costs RM3.</p>
+            <p className="text-sm text-slate-500 mt-1">Each form generate costs RM2.</p>
           </CardContent>
         </Card>
 

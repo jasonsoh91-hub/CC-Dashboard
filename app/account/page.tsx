@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { getMyAgent, updateMyAgent } from '@/lib/applications';
+import { createClient } from '@/lib/supabase/client';
 
 export default function AccountPage() {
   const [name, setName] = useState('');
@@ -16,6 +17,12 @@ export default function AccountPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+
+  // Password change (self-service; onboarded accounts start on a shared temp password).
+  const [pw, setPw] = useState('');
+  const [pw2, setPw2] = useState('');
+  const [pwSaving, setPwSaving] = useState(false);
+  const [pwMsg, setPwMsg] = useState<string | null>(null);
 
   useEffect(() => {
     getMyAgent()
@@ -36,6 +43,29 @@ export default function AccountPage() {
     const res = await updateMyAgent({ agent_name: name, agent_ic: ic, agent_staff_id: staffId });
     setSaving(false);
     setMsg(res.ok ? 'Saved. These auto-fill your generated PDFs.' : res.error || 'Save failed.');
+  };
+
+  const savePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPwMsg(null);
+    if (pw.length < 6) {
+      setPwMsg('Password must be at least 6 characters.');
+      return;
+    }
+    if (pw !== pw2) {
+      setPwMsg('Passwords do not match.');
+      return;
+    }
+    setPwSaving(true);
+    const { error } = await createClient().auth.updateUser({ password: pw });
+    setPwSaving(false);
+    if (error) {
+      setPwMsg(error.message);
+      return;
+    }
+    setPw('');
+    setPw2('');
+    setPwMsg('Password updated. Use it the next time you sign in.');
   };
 
   return (
@@ -81,6 +111,48 @@ export default function AccountPage() {
                 </div>
               </form>
             )}
+          </CardContent>
+        </Card>
+
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle className="text-lg">Change Password</CardTitle>
+            <p className="text-sm text-slate-500">
+              If you are still on the temporary password you were given, change it now.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={savePassword} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="pw">New password</Label>
+                <Input
+                  id="pw"
+                  type="password"
+                  autoComplete="new-password"
+                  value={pw}
+                  onChange={(e) => setPw(e.target.value)}
+                  placeholder="At least 6 characters"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="pw2">Confirm new password</Label>
+                <Input
+                  id="pw2"
+                  type="password"
+                  autoComplete="new-password"
+                  value={pw2}
+                  onChange={(e) => setPw2(e.target.value)}
+                />
+              </div>
+              <div className="flex items-center gap-3">
+                <Button type="submit" disabled={pwSaving}>
+                  {pwSaving ? 'Updating…' : 'Update password'}
+                </Button>
+                {pwMsg && (
+                  <span className="text-sm text-slate-600 dark:text-slate-300">{pwMsg}</span>
+                )}
+              </div>
+            </form>
           </CardContent>
         </Card>
       </div>
