@@ -62,6 +62,75 @@ export async function saveApplication(
   return id;
 }
 
+// Persist the data the moment extraction succeeds, before any PDF exists, so the
+// admin sees every application an agent ever ran — including abandoned ones.
+// Pass the previous id to overwrite the same draft when an agent re-extracts,
+// instead of littering the table with a row per attempt. A draft that has
+// already been generated (and charged) is never overwritten.
+export async function saveExtraction(
+  formData: ApplicationFormData,
+  existingId?: string | null
+): Promise<string | null> {
+  try {
+    const supabase = createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return null;
+
+    const summary = {
+      applicant_name: formData.name_as_per_ic || formData.name || null,
+      ic_number: formData.mykad_number || formData.ic_number || null,
+      bank_id: formData.bank_id || null,
+      card_type: formData.card_type || null,
+      data: formData,
+    };
+
+    if (existingId) {
+      const { data: updated } = await supabase
+        .from('applications')
+        .update(summary)
+        .eq('id', existingId)
+        .eq('user_id', user.id)
+        .eq('status', 'extracted')
+        .select('id')
+        .maybeSingle();
+      if (updated?.id) return updated.id as string;
+      // Row is gone or already generated — fall through and start a new one.
+    }
+
+    const { data: row, error } = await supabase
+      .from('applications')
+      .insert({ ...summary, user_id: user.id, status: 'extracted' })
+      .select('id')
+      .single();
+    if (error) throw error;
+    return row.id as string;
+  } catch (e) {
+    // Never block the agent's workflow on a storage failure.
+    console.error('[Extraction] save failed:', e);
+    return null;
+  }
+}
+
+// user_id -> owner details, for the admin applications view (staff-only RLS).
+export async function getOwnerDirectory(): Promise<
+  Record<string, { email: string; agent_name: string | null; agent_staff_id: string | null }>
+> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from('profiles')
+    .select('id, email, agent_name, agent_staff_id');
+  const map: Record<
+    string,
+    { email: string; agent_name: string | null; agent_staff_id: string | null }
+  > = {};
+  (data ?? []).forEach((p: { id: string; email: string; agent_name: string | null; agent_staff_id: string | null }) => {
+    map[p.id] = { email: p.email, agent_name: p.agent_name, agent_staff_id: p.agent_staff_id };
+  });
+  return map;
+}
+
 // List the current user's saved applications (newest first).
 export async function listApplications(): Promise<SavedApplication[]> {
   const supabase = createClient();
@@ -69,6 +138,21 @@ export async function listApplications(): Promise<SavedApplication[]> {
     .from('applications')
     .select('*')
     .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as SavedApplication[];
+}
+
+// Admin/manager view: every agent's applications. RLS ("app select" in
+// 0002_roles.sql) already widens the result set for staff, so this is the same
+// query as listApplications with an explicit page size — PostgREST otherwise
+// caps at 1000 rows and would silently truncate the export.
+export async function listAllApplications(limit = 5000): Promise<SavedApplication[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from('applications')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .range(0, limit - 1);
   if (error) throw error;
   return (data ?? []) as SavedApplication[];
 }

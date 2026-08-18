@@ -184,6 +184,9 @@ export default function AdminPage() {
         <div className="mb-6 flex items-center justify-between gap-4">
           <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Admin</h1>
           <div className="flex gap-2">
+            <Link href="/admin/applications" className={buttonVariants()}>
+              Applications data
+            </Link>
             <Link href="/history" className={buttonVariants({ variant: 'outline' })}>
               History
             </Link>

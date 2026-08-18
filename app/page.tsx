@@ -12,7 +12,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import type { ExtractedData, ApplicationFormData } from '@/lib/types';
 import { dropdownOptions } from '@/lib/types';
 import { BANKS, getCardsByBank } from '@/lib/banks';
-import { getMyProfile, getMyBalance, logEvent, submitFeedback, type Role } from '@/lib/applications';
+import { getMyProfile, getMyBalance, logEvent, saveExtraction, submitFeedback, type Role } from '@/lib/applications';
 import { BALANCE_CHANGED_EVENT, CREDIT_FLOOR, SUPPORT_WHATSAPP } from '@/lib/support';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
@@ -100,6 +100,8 @@ export default function Dashboard() {
 
   const [profile, setProfile] = useState<{ role: Role; email: string } | null>(null);
   const [lastSavedId, setLastSavedId] = useState<string | null>(null);
+  // Row written at extraction time; promoted to 'generated' when the PDF is made.
+  const [draftId, setDraftId] = useState<string | null>(null);
   const [balance, setBalance] = useState<{ balance: number; source: 'team' | 'user' } | null>(null);
 
   const refreshBalance = () => {
@@ -298,7 +300,12 @@ export default function Dashboard() {
         }
 
         setFormData(mappedData);
-        logEvent('extract'); // track extraction usage
+        // Persist immediately so the admin has the record even if this
+        // application is never turned into a PDF. Re-extracting reuses the
+        // same draft row rather than creating a new one.
+        const savedDraft = await saveExtraction(mappedData, draftId);
+        setDraftId(savedDraft);
+        logEvent('extract', savedDraft ?? undefined); // track extraction usage
         console.log('📝 Form data updated:', mappedData);
         console.log('🏢 Mapped employer_name:', mappedData.employer_name);
         console.log('🏢 Mapped hr_email:', mappedData.hr_email);
@@ -332,7 +339,7 @@ export default function Dashboard() {
       const response = await fetch('/api/generate-pdf', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(cleanData),
+        body: JSON.stringify({ ...cleanData, application_id: draftId }),
       });
 
       if (response.ok) {
@@ -349,6 +356,8 @@ export default function Dashboard() {
         // Application + PDF are saved server-side (atomic with the charge).
         const savedId = response.headers.get('X-Application-Id') || undefined;
         if (savedId) setLastSavedId(savedId);
+        // Draft has been promoted to 'generated'; the next extraction starts a new row.
+        setDraftId(null);
         logEvent('download', savedId); // track PDF download/generation
         refreshBalance(); // RM2 was deducted server-side
       } else if (response.status === 402) {

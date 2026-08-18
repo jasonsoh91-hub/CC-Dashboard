@@ -9,6 +9,11 @@ const FORM_COST = 2; // RM2 per generated form
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    // Id of the row already written at extraction time (if any). Pulled out
+    // before validation so it isn't mistaken for a form field.
+    const draftId: string | null =
+      typeof body.application_id === 'string' ? body.application_id : null;
+    delete body.application_id;
     console.log('[PDF API] Received body keys:', Object.keys(body));
     console.log('[PDF API] mykad_number:', body.mykad_number);
     console.log('[PDF API] employer_name:', body.employer_name);
@@ -116,21 +121,39 @@ export async function POST(request: NextRequest) {
     try {
       if (user) {
         const d = validatedData as any;
-        const { data: row, error: insErr } = await supabase
-          .from('applications')
-          .insert({
-            user_id: user.id,
-            applicant_name: d.name_as_per_ic || d.name || null,
-            ic_number: d.mykad_number || d.ic_number || null,
-            bank_id: d.bank_id || null,
-            card_type: d.card_type || null,
-            status: 'generated',
-            data: d,
-          })
-          .select('id')
-          .single();
-        if (insErr) throw insErr;
-        applicationId = row.id as string;
+        const summary = {
+          applicant_name: d.name_as_per_ic || d.name || null,
+          ic_number: d.mykad_number || d.ic_number || null,
+          bank_id: d.bank_id || null,
+          card_type: d.card_type || null,
+          status: 'generated',
+          data: d,
+        };
+
+        // Promote the extraction draft to 'generated' rather than inserting a
+        // second row for the same application. Scoped to the caller's own
+        // still-extracted row so a stale/forged id can't overwrite anything.
+        if (draftId) {
+          const { data: upd } = await supabase
+            .from('applications')
+            .update(summary)
+            .eq('id', draftId)
+            .eq('user_id', user.id)
+            .eq('status', 'extracted')
+            .select('id')
+            .maybeSingle();
+          if (upd?.id) applicationId = upd.id as string;
+        }
+
+        if (!applicationId) {
+          const { data: row, error: insErr } = await supabase
+            .from('applications')
+            .insert({ ...summary, user_id: user.id })
+            .select('id')
+            .single();
+          if (insErr) throw insErr;
+          applicationId = row.id as string;
+        }
 
         const path = `${user.id}/${applicationId}.pdf`;
         const { error: upErr } = await supabase.storage
