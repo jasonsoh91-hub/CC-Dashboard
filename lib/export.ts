@@ -9,6 +9,7 @@ export const FORM_FIELDS = Object.keys(ApplicationFormDataSchema.shape) as strin
 const META_COLUMNS = [
   'created_at',
   'status',
+  'attempts',
   'agent_email',
   'agent_name',
   'agent_staff_id',
@@ -64,9 +65,12 @@ function csvEscape(v: string): string {
   return /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
 }
 
+// `attempts` maps an application id to how many rows it stands for once
+// duplicates are collapsed. Omit it and every row exports as a single attempt.
 export function applicationsToCsv(
   rows: SavedApplication[],
-  owners: Record<string, OwnerInfo>
+  owners: Record<string, OwnerInfo>,
+  attempts: Record<string, number> = {}
 ): string {
   const lines: string[] = [EXPORT_COLUMNS.map(csvEscape).join(',')];
 
@@ -79,6 +83,8 @@ export function applicationsToCsv(
           return new Date(row.created_at).toLocaleString('en-MY');
         case 'status':
           return row.status;
+        case 'attempts':
+          return String(attempts[row.id] ?? 1);
         case 'agent_email':
           return owner?.email ?? '';
         case 'agent_name':

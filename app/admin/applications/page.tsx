@@ -97,9 +97,80 @@ export default function AdminApplicationsPage() {
     });
   }, [rows, search, agent, status, bank, from, to, owners]);
 
+  // Collapse repeat submissions of the same applicant. Agents regenerate a form
+  // several times (fixing a typo, re-downloading), and each generate used to
+  // write its own row. IC is the reliable identity; fall back to the normalised
+  // name when the IC is missing, and never group rows that have neither.
+  const groups = useMemo(() => {
+    const map = new Map<string, SavedApplication[]>();
+    const keyByName = new Map<string, string>();
+    const push = (key: string, r: SavedApplication) => {
+      const bucket = map.get(key);
+      if (bucket) bucket.push(r);
+      else map.set(key, [r]);
+    };
+    const idOf = (r: SavedApplication) => ({
+      ic: (r.ic_number ?? '').replace(/\D/g, ''),
+      name: (r.applicant_name ?? '').trim().toUpperCase().replace(/\s+/g, ' '),
+    });
+
+    // Pass 1: rows that carry an IC, which is the trustworthy identity.
+    for (const r of filtered) {
+      const { ic, name } = idOf(r);
+      if (!ic) continue;
+      const key = `ic:${ic}`;
+      push(key, r);
+      if (name && !keyByName.has(name)) keyByName.set(name, key);
+    }
+    // Pass 2: rows with no IC. Extraction sometimes misses it, which would
+    // otherwise split one applicant across two groups, so fall back to matching
+    // on name against a group that does have an IC before starting a new one.
+    for (const r of filtered) {
+      const { ic, name } = idOf(r);
+      if (ic) continue;
+      push(name ? keyByName.get(name) ?? `nm:${name}` : `id:${r.id}`, r);
+    }
+
+    // Merging the two passes breaks the newest-first order within a bucket.
+    for (const bucket of map.values()) {
+      bucket.sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
+    }
+
+    return Array.from(map.values())
+      .map((all) => ({
+        primary: all[0],
+        all,
+        // More than one agent on the same applicant is a real signal, not clutter.
+        agents: new Set(all.map((a) => a.user_id)).size,
+        // The newest row isn't necessarily the one that has a stored PDF.
+        pdfRow: all.find((a) => a.pdf_path) ?? null,
+      }))
+      // Two-pass bucketing loses the overall ordering, so restore newest-first.
+      .sort((a, b) => +new Date(b.primary.created_at) - +new Date(a.primary.created_at));
+  }, [filtered]);
+
+  const [dedupe, setDedupe] = useState(true);
+
+  const visible = dedupe ? groups.map((g) => g.primary) : filtered;
+  const attemptsById = useMemo(() => {
+    const m: Record<string, number> = {};
+    groups.forEach((g) => (m[g.primary.id] = g.all.length));
+    return m;
+  }, [groups]);
+  const groupByPrimaryId = useMemo(() => {
+    const m: Record<string, (typeof groups)[number]> = {};
+    groups.forEach((g) => (m[g.primary.id] = g));
+    return m;
+  }, [groups]);
+
+  const hiddenCount = filtered.length - groups.length;
+
   const exportCsv = () => {
     const stamp = new Date().toISOString().slice(0, 10);
-    downloadCsv(`cc-applications-${stamp}.csv`, applicationsToCsv(filtered, owners));
+    downloadCsv(
+      `cc-applications-${stamp}${dedupe ? '' : '-all'}.csv`,
+      applicationsToCsv(visible, owners, dedupe ? attemptsById : {})
+    );
   };
 
   const openPdf = async (row: SavedApplication) => {
@@ -114,7 +185,8 @@ export default function AdminApplicationsPage() {
 
   if (authed === null) return <div className="p-8 text-slate-500">Checking access…</div>;
 
-  const generated = filtered.filter((r) => r.status === 'generated').length;
+  const generated = visible.filter((r) => r.status === 'generated').length;
+  const multiAgent = groups.filter((g) => g.agents > 1).length;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
@@ -128,8 +200,11 @@ export default function AdminApplicationsPage() {
             </p>
           </div>
           <div className="flex gap-2">
-            <Button onClick={exportCsv} disabled={filtered.length === 0}>
-              Export CSV ({filtered.length})
+            <Button variant="outline" onClick={() => setDedupe((d) => !d)}>
+              {dedupe ? 'Show all attempts' : 'Group duplicates'}
+            </Button>
+            <Button onClick={exportCsv} disabled={visible.length === 0}>
+              Export CSV ({visible.length})
             </Button>
             <Link href="/admin" className={buttonVariants({ variant: 'outline' })}>
               Admin
@@ -142,27 +217,33 @@ export default function AdminApplicationsPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <Card>
             <CardHeader className="pb-1">
-              <CardTitle className="text-sm text-slate-500">Showing</CardTitle>
+              <CardTitle className="text-sm text-slate-500">
+                {dedupe ? 'Applicants' : 'Rows'}
+              </CardTitle>
             </CardHeader>
-            <CardContent className="text-3xl font-bold">{filtered.length}</CardContent>
+            <CardContent className="text-3xl font-bold">{visible.length}</CardContent>
           </Card>
           <Card>
             <CardHeader className="pb-1">
-              <CardTitle className="text-sm text-slate-500">Generated</CardTitle>
+              <CardTitle className="text-sm text-slate-500">Repeat submissions</CardTitle>
             </CardHeader>
-            <CardContent className="text-3xl font-bold">{generated}</CardContent>
+            <CardContent className="text-3xl font-bold">{hiddenCount}</CardContent>
           </Card>
           <Card>
             <CardHeader className="pb-1">
               <CardTitle className="text-sm text-slate-500">Extracted only</CardTitle>
             </CardHeader>
-            <CardContent className="text-3xl font-bold">{filtered.length - generated}</CardContent>
+            <CardContent className="text-3xl font-bold">{visible.length - generated}</CardContent>
           </Card>
           <Card>
             <CardHeader className="pb-1">
-              <CardTitle className="text-sm text-slate-500">Agents</CardTitle>
+              <CardTitle className="text-sm text-slate-500">Shared applicants</CardTitle>
             </CardHeader>
-            <CardContent className="text-3xl font-bold">{agentOptions.length}</CardContent>
+            <CardContent
+              className={'text-3xl font-bold ' + (multiAgent > 0 ? 'text-amber-600' : '')}
+            >
+              {multiAgent}
+            </CardContent>
           </Card>
         </div>
 
@@ -258,7 +339,7 @@ export default function AdminApplicationsPage() {
           <CardContent className="overflow-x-auto">
             {loading ? (
               <p className="text-slate-500">Loading…</p>
-            ) : filtered.length === 0 ? (
+            ) : visible.length === 0 ? (
               <p className="text-slate-500">No applications match these filters.</p>
             ) : (
               <table className="w-full text-sm">
@@ -274,16 +355,34 @@ export default function AdminApplicationsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((r) => {
+                  {visible.map((r) => {
                     const data = (r.data ?? {}) as Record<string, unknown>;
                     const isOpen = expanded === r.id;
+                    const group = dedupe ? groupByPrimaryId[r.id] : undefined;
+                    const dupes = group ? group.all.length : 1;
+                    const pdfRow = group?.pdfRow ?? (r.pdf_path ? r : null);
                     return (
                       <Fragment key={r.id}>
                         <tr className="border-b last:border-0 align-top">
                           <td className="py-2 pr-4 whitespace-nowrap text-slate-500">
                             {new Date(r.created_at).toLocaleString('en-MY')}
                           </td>
-                          <td className="py-2 pr-4 font-medium">{r.applicant_name || '—'}</td>
+                          <td className="py-2 pr-4 font-medium">
+                            {r.applicant_name || '—'}
+                            {dupes > 1 && (
+                              <span className="ml-2 text-xs px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+                                ×{dupes}
+                              </span>
+                            )}
+                            {group && group.agents > 1 && (
+                              <span
+                                className="ml-1 text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-700"
+                                title="More than one agent submitted this applicant"
+                              >
+                                {group.agents} agents
+                              </span>
+                            )}
+                          </td>
                           <td className="py-2 pr-4 font-mono text-xs">{r.ic_number || '—'}</td>
                           <td className="py-2 pr-4 text-xs">
                             {r.bank_id || '—'}
@@ -314,8 +413,8 @@ export default function AdminApplicationsPage() {
                               >
                                 {isOpen ? 'Hide' : 'View'}
                               </Button>
-                              {r.pdf_path && (
-                                <Button variant="outline" size="sm" onClick={() => openPdf(r)}>
+                              {pdfRow && (
+                                <Button variant="outline" size="sm" onClick={() => openPdf(pdfRow)}>
                                   PDF
                                 </Button>
                               )}
@@ -325,6 +424,45 @@ export default function AdminApplicationsPage() {
                         {isOpen && (
                           <tr className="border-b bg-slate-50 dark:bg-slate-800/50">
                             <td colSpan={7} className="p-4">
+                              {group && dupes > 1 && (
+                                <div className="mb-4">
+                                  <p className="text-xs font-medium text-slate-500 mb-1">
+                                    {dupes} submissions for this applicant — showing the latest
+                                    above
+                                  </p>
+                                  <div className="space-y-1">
+                                    {group.all.map((a, i) => (
+                                      <div
+                                        key={a.id}
+                                        className="flex flex-wrap items-center gap-2 text-xs text-slate-600 dark:text-slate-300"
+                                      >
+                                        <span className="text-slate-400 w-36 shrink-0">
+                                          {new Date(a.created_at).toLocaleString('en-MY')}
+                                        </span>
+                                        <span className="w-16 shrink-0">
+                                          {i === 0 ? 'latest' : `#${dupes - i}`}
+                                        </span>
+                                        <span className="w-52 truncate">{a.card_type || '—'}</span>
+                                        <span className="truncate">
+                                          {owners[a.user_id]?.agent_name ||
+                                            owners[a.user_id]?.email ||
+                                            a.user_id.slice(0, 8)}
+                                        </span>
+                                        {a.pdf_path && (
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-6 px-2"
+                                            onClick={() => openPdf(a)}
+                                          >
+                                            PDF
+                                          </Button>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                               <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-2 text-xs">
                                 {Object.entries(data)
                                   .filter(([, v]) => v !== null && v !== undefined && v !== '')
