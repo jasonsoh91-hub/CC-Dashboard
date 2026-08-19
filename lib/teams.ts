@@ -51,6 +51,17 @@ export async function listTopupRequests(): Promise<TopupRequest[]> {
   return (data ?? []) as TopupRequest[];
 }
 
+// How many top-up requests are waiting on this user. RLS already narrows the
+// rows: admins see every request, managers only their own team's. Returns 0 for
+// a plain agent, who has nothing to approve.
+export async function countPendingTopups(): Promise<number> {
+  const { count } = await db()
+    .from('topup_requests')
+    .select('*', { count: 'exact', head: true })
+    .eq('status', 'pending');
+  return count ?? 0;
+}
+
 // --- admin: team + membership management (RLS-gated) ---
 export async function createTeam(name: string, managerId: string | null): Promise<string> {
   const { data, error } = await db()

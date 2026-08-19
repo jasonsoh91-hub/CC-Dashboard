@@ -2,8 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Select,
@@ -104,16 +103,15 @@ export default function TeamPage() {
   if (role === null) return <div className="p-8 text-slate-500">Loading…</div>;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
+    <div className="flex-1">
       <div className="container mx-auto px-4 py-8 max-w-4xl">
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Teams &amp; Credit</h1>
-          <div className="flex gap-2">
-            {role === 'admin' && (
-              <Link href="/admin" className={buttonVariants({ variant: 'outline' })}>Admin</Link>
-            )}
-            <Link href="/" className={buttonVariants({ variant: 'outline' })}>Form</Link>
-          </div>
+        <div className="mb-6">
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">
+            Teams &amp; Credit
+          </h1>
+          <p className="text-sm text-slate-500">
+            Approve top-up requests, manage teams and allocate credit.
+          </p>
         </div>
 
         {err && <p className="mb-4 text-red-600">{err}</p>}

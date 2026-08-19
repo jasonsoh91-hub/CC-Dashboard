@@ -2,8 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -21,6 +20,8 @@ import {
   listAllApplications,
   type SavedApplication,
 } from '@/lib/applications';
+import { CopyMinus, FileClock, UserSearch, Users } from 'lucide-react';
+import { StatCard } from '@/components/stat-card';
 import { applicationsToCsv, downloadCsv, EXPORT_COLUMNS, type OwnerInfo } from '@/lib/export';
 
 const ALL = '__all__';
@@ -189,7 +190,7 @@ export default function AdminApplicationsPage() {
   const multiAgent = groups.filter((g) => g.agents > 1).length;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
+    <div className="flex-1">
       <div className="container mx-auto px-4 py-8 max-w-7xl">
         <div className="mb-6 flex items-center justify-between gap-4">
           <div>
@@ -206,45 +207,37 @@ export default function AdminApplicationsPage() {
             <Button onClick={exportCsv} disabled={visible.length === 0}>
               Export CSV ({visible.length})
             </Button>
-            <Link href="/admin" className={buttonVariants({ variant: 'outline' })}>
-              Admin
-            </Link>
           </div>
         </div>
 
         {error && <p className="mb-4 text-red-600">{error}</p>}
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <Card>
-            <CardHeader className="pb-1">
-              <CardTitle className="text-sm text-slate-500">
-                {dedupe ? 'Applicants' : 'Rows'}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="text-3xl font-bold">{visible.length}</CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-1">
-              <CardTitle className="text-sm text-slate-500">Repeat submissions</CardTitle>
-            </CardHeader>
-            <CardContent className="text-3xl font-bold">{hiddenCount}</CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-1">
-              <CardTitle className="text-sm text-slate-500">Extracted only</CardTitle>
-            </CardHeader>
-            <CardContent className="text-3xl font-bold">{visible.length - generated}</CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-1">
-              <CardTitle className="text-sm text-slate-500">Shared applicants</CardTitle>
-            </CardHeader>
-            <CardContent
-              className={'text-3xl font-bold ' + (multiAgent > 0 ? 'text-amber-600' : '')}
-            >
-              {multiAgent}
-            </CardContent>
-          </Card>
+          <StatCard
+            label={dedupe ? 'Applicants' : 'Rows'}
+            value={visible.length}
+            icon={Users}
+            hint={dedupe ? 'Duplicates collapsed' : 'Every attempt listed'}
+          />
+          <StatCard
+            label="Repeat submissions"
+            value={hiddenCount}
+            icon={CopyMinus}
+            hint={hiddenCount > 0 ? 'Folded into the rows above' : 'None'}
+          />
+          <StatCard
+            label="Extracted only"
+            value={visible.length - generated}
+            icon={FileClock}
+            hint="Never turned into a PDF"
+          />
+          <StatCard
+            label="Shared applicants"
+            value={multiAgent}
+            icon={UserSearch}
+            tone={multiAgent > 0 ? 'amber' : 'default'}
+            hint={multiAgent > 0 ? 'Submitted by more than one agent' : 'No overlap'}
+          />
         </div>
 
         <Card className="mb-6">

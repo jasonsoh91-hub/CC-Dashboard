@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,7 +13,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Download, MessageSquare, Sparkles, Users, Wallet } from 'lucide-react';
+import { StatCard } from '@/components/stat-card';
 import { getMyProfile, type FeedbackRow } from '@/lib/applications';
+import { countPendingTopups } from '@/lib/teams';
 import { createClient } from '@/lib/supabase/client';
 
 type AdminUser = {
@@ -44,6 +46,7 @@ export default function AdminPage() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [feedback, setFeedback] = useState<FeedbackRow[]>([]);
+  const [pendingTopups, setPendingTopups] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   // new-user form
@@ -73,6 +76,7 @@ export default function AdminPage() {
     else setUsers(u.users);
     if (!s.error) setStats(s);
     loadFeedback();
+    countPendingTopups().then(setPendingTopups).catch(() => {});
   };
 
   const resolveFeedback = async (id: string, status: 'open' | 'resolved') => {
@@ -173,59 +177,48 @@ export default function AdminPage() {
   }
 
   const maxDay = Math.max(1, ...(stats?.perDay.map((d) => d.count) ?? [1]));
+  const openFeedback = feedback.filter((f) => f.status === 'open').length;
   const usageByEmail: Record<string, { extractions: number; downloads: number }> = {};
   (stats?.perUser ?? []).forEach((p) => {
     usageByEmail[p.email] = { extractions: p.extractions, downloads: p.downloads };
   });
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
+    <div className="flex-1">
       <div className="container mx-auto px-4 py-8 max-w-5xl">
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Admin</h1>
-          <div className="flex gap-2">
-            <Link href="/admin/applications" className={buttonVariants()}>
-              Applications data
-            </Link>
-            <Link href="/history" className={buttonVariants({ variant: 'outline' })}>
-              History
-            </Link>
-            <Link href="/" className={buttonVariants({ variant: 'outline' })}>
-              Form
-            </Link>
-          </div>
+        <div className="mb-6">
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">
+            Admin
+          </h1>
+          <p className="text-sm text-slate-500">Users, usage and reported issues.</p>
         </div>
 
         {error && <p className="mb-4 text-red-600">{error}</p>}
 
         {/* Stat cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <Card>
-            <CardHeader className="pb-1">
-              <CardTitle className="text-sm text-slate-500">Extractions</CardTitle>
-            </CardHeader>
-            <CardContent className="text-3xl font-bold">{stats?.totalExtract ?? '—'}</CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-1">
-              <CardTitle className="text-sm text-slate-500">Downloads</CardTitle>
-            </CardHeader>
-            <CardContent className="text-3xl font-bold">{stats?.totalDownload ?? '—'}</CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-1">
-              <CardTitle className="text-sm text-slate-500">Users</CardTitle>
-            </CardHeader>
-            <CardContent className="text-3xl font-bold">{stats?.userCount ?? '—'}</CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-1">
-              <CardTitle className="text-sm text-slate-500">Open feedback</CardTitle>
-            </CardHeader>
-            <CardContent className="text-3xl font-bold">
-              {feedback.filter((f) => f.status === 'open').length}
-            </CardContent>
-          </Card>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
+          <StatCard
+            label="Extractions"
+            value={stats?.totalExtract ?? '—'}
+            icon={Sparkles}
+            href="/admin/applications"
+          />
+          <StatCard label="Downloads" value={stats?.totalDownload ?? '—'} icon={Download} />
+          <StatCard label="Users" value={stats?.userCount ?? '—'} icon={Users} />
+          <StatCard
+            label="Pending top-ups"
+            value={pendingTopups}
+            hint={pendingTopups > 0 ? 'Agents waiting on credit' : 'Nothing to approve'}
+            icon={Wallet}
+            tone={pendingTopups > 0 ? 'amber' : 'default'}
+            href="/team"
+          />
+          <StatCard
+            label="Open feedback"
+            value={openFeedback}
+            icon={MessageSquare}
+            tone={openFeedback > 0 ? 'amber' : 'default'}
+          />
         </div>
 
         {/* Create user */}

@@ -128,3 +128,14 @@
     @apply font-sans;
   }
 }
+
+@layer utilities {
+  /* The nav scrolls sideways on narrow screens; the scrollbar itself is noise. */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}

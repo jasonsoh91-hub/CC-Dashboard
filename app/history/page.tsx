@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   listApplications,
@@ -69,20 +68,15 @@ export default function HistoryPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
+    <div className="flex-1">
       <div className="container mx-auto px-4 py-8 max-w-4xl">
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-2">
-              Saved Applications
-            </h1>
-            <p className="text-slate-600 dark:text-slate-400">
-              {apps.length} saved{staff ? ' · viewing all users' : ''} · role: {role}
-            </p>
-          </div>
-          <Link href="/" className={buttonVariants({ variant: 'outline' })}>
-            ← Back to form
-          </Link>
+        <div className="mb-6">
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-2">
+            Saved Applications
+          </h1>
+          <p className="text-slate-600 dark:text-slate-400">
+            {apps.length} saved{staff ? ' · viewing all users' : ''} · role: {role}
+          </p>
         </div>
 
         {loading && <p className="text-slate-500">Loading…</p>}

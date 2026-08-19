@@ -41,7 +41,7 @@ Position: MD
 Date joined:1998`;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 p-8">
+    <div className="flex-1 p-8">
       <div className="max-w-4xl mx-auto">
         <h1 className="text-2xl font-bold mb-4">API Extraction Test Page</h1>
         <p className="mb-6 text-slate-600">This page tests the extraction API directly, bypassing the main dashboard.</p>

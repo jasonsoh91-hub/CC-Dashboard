@@ -1,8 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -47,13 +46,13 @@ export default function CreditsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
+    <div className="flex-1">
       <div className="container mx-auto px-4 py-8 max-w-3xl">
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Credits</h1>
-          <Link href="/" className={buttonVariants({ variant: 'outline' })}>
-            ← Back to form
-          </Link>
+        <div className="mb-6">
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">
+            Credits
+          </h1>
+          <p className="text-sm text-slate-500">Your balance, ledger and top-up requests.</p>
         </div>
 
         <Card className="mb-6">

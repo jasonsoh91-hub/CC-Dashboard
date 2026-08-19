@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,10 +12,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import type { ExtractedData, ApplicationFormData } from '@/lib/types';
 import { dropdownOptions } from '@/lib/types';
 import { BANKS, getCardsByBank } from '@/lib/banks';
-import { getMyProfile, getMyBalance, logEvent, saveExtraction, submitFeedback, type Role } from '@/lib/applications';
+import { logEvent, saveExtraction, submitFeedback } from '@/lib/applications';
 import { BALANCE_CHANGED_EVENT, CREDIT_FLOOR, SUPPORT_WHATSAPP } from '@/lib/support';
-import Link from 'next/link';
-import { createClient } from '@/lib/supabase/client';
 
 // Helper: Generate name for card (max 19 characters, smart truncate)
 // Always removes "BINTI"/"BIN" connectors for cleaner card names
@@ -98,26 +96,13 @@ export default function Dashboard() {
     agree_declaration: true,
   });
 
-  const [profile, setProfile] = useState<{ role: Role; email: string } | null>(null);
   const [lastSavedId, setLastSavedId] = useState<string | null>(null);
   // Row written at extraction time; promoted to 'generated' when the PDF is made.
   const [draftId, setDraftId] = useState<string | null>(null);
-  const [balance, setBalance] = useState<{ balance: number; source: 'team' | 'user' } | null>(null);
 
-  const refreshBalance = () => {
-    getMyBalance()
-      .then((b) => {
-        setBalance(b);
-        // Let the low-balance reminder re-check straight after a charge.
-        window.dispatchEvent(new Event(BALANCE_CHANGED_EVENT));
-      })
-      .catch(() => {});
-  };
-
-  useEffect(() => {
-    getMyProfile().then(setProfile).catch(() => {});
-    refreshBalance();
-  }, []);
+  // The nav bar owns the balance chip and the reminder watches the same event,
+  // so a charge here only needs to tell them to re-read.
+  const refreshBalance = () => window.dispatchEvent(new Event(BALANCE_CHANGED_EVENT));
 
   // Report an extraction issue / error, linked to the last saved application if any.
   const handleReportIssue = async () => {
@@ -686,7 +671,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
+    <div className="flex-1">
       <div className="container mx-auto px-4 py-8 max-w-6xl">
         {/* Header */}
         <div className="mb-6 flex items-start justify-between gap-4">
@@ -698,64 +683,11 @@ export default function Dashboard() {
               AI-powered credit card application processing dashboard
             </p>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            {profile && (
-              <span className="text-xs px-2 py-1 rounded-md bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200">
-                {profile.email} · {profile.role}
-              </span>
-            )}
-            {balance && (
-              <span
-                className={
-                  'text-xs px-2 py-1 rounded-md font-semibold ' +
-                  (balance.balance < 2
-                    ? 'bg-red-100 text-red-700'
-                    : 'bg-emerald-100 text-emerald-700')
-                }
-                title={
-                  balance.balance < 2
-                    ? `Low credit — top up on the Credits page or WhatsApp ${SUPPORT_WHATSAPP}`
-                    : balance.source === 'team'
-                      ? 'Team pool balance'
-                      : 'Your balance'
-                }
-              >
-                RM{balance.balance.toFixed(2)}
-                {balance.source === 'team' ? ' (pool)' : ''}
-              </span>
-            )}
-            <Link href="/credits" className={buttonVariants({ variant: 'outline' })}>
-              Credits
-            </Link>
-            {(profile?.role === 'admin' || profile?.role === 'manager') && (
-              <Link href="/team" className={buttonVariants({ variant: 'outline' })}>
-                Teams
-              </Link>
-            )}
-            {profile?.role === 'admin' && (
-              <Link href="/admin" className={buttonVariants({ variant: 'outline' })}>
-                Admin
-              </Link>
-            )}
-            <Link href="/history" className={buttonVariants({ variant: 'outline' })}>
-              History
-            </Link>
-            <Link href="/account" className={buttonVariants({ variant: 'outline' })}>
-              Account
-            </Link>
-            <Button variant="outline" onClick={handleReportIssue}>
-              Report issue
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={async () => {
-                await createClient().auth.signOut();
-                window.location.href = '/login';
-              }}
-            >
-              Sign out
-            </Button>
-          </div>
+          {/* Everything else that used to live here — links, balance, sign out —
+              is now in the shared nav bar. */}
+          <Button variant="outline" onClick={handleReportIssue} className="shrink-0">
+            Report issue
+          </Button>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
