@@ -15,6 +15,9 @@ export type SavedApplication = {
   pdf_path: string | null;
   created_at: string;
   updated_at: string;
+  // Raw capture (migration 0011) — undefined on rows written before it ran.
+  raw_text?: string | null;
+  extracted_data?: Record<string, unknown> | null;
 };
 
 // Insert an application row, then upload the generated PDF to Storage.
@@ -67,9 +70,17 @@ export async function saveApplication(
 // Pass the previous id to overwrite the same draft when an agent re-extracts,
 // instead of littering the table with a row per attempt. A draft that has
 // already been generated (and charged) is never overwritten.
+/** A column referenced before migration 0011 has been applied. */
+function isMissingColumn(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  // 42703 = undefined_column (direct), PGRST204 = not in PostgREST's schema cache.
+  return error.code === '42703' || error.code === 'PGRST204' || /raw_text|extracted_data/.test(error.message ?? '');
+}
+
 export async function saveExtraction(
   formData: ApplicationFormData,
-  existingId?: string | null
+  existingId?: string | null,
+  capture?: { rawText?: string; extracted?: unknown }
 ): Promise<string | null> {
   try {
     const supabase = createClient();
@@ -86,26 +97,56 @@ export async function saveExtraction(
       data: formData,
     };
 
+    // Raw capture is stored so nothing the AI found is lost just because the
+    // current form has nowhere to put it. Kept separate from `data` so the form
+    // blob stays exactly ApplicationFormData.
+    const withCapture = {
+      ...summary,
+      ...(capture?.rawText !== undefined ? { raw_text: capture.rawText } : {}),
+      ...(capture?.extracted !== undefined ? { extracted_data: capture.extracted } : {}),
+    };
+
     if (existingId) {
-      const { data: updated } = await supabase
+      let { data: updated, error: updErr } = await supabase
         .from('applications')
-        .update(summary)
+        .update(withCapture)
         .eq('id', existingId)
         .eq('user_id', user.id)
         .eq('status', 'extracted')
         .select('id')
         .maybeSingle();
+      // Fail open if 0011 hasn't been applied yet: save the form data anyway
+      // rather than losing the whole draft over two new columns.
+      if (isMissingColumn(updErr)) {
+        console.warn('[Extraction] raw capture columns missing — run migration 0011.');
+        ({ data: updated } = await supabase
+          .from('applications')
+          .update(summary)
+          .eq('id', existingId)
+          .eq('user_id', user.id)
+          .eq('status', 'extracted')
+          .select('id')
+          .maybeSingle());
+      }
       if (updated?.id) return updated.id as string;
       // Row is gone or already generated — fall through and start a new one.
     }
 
-    const { data: row, error } = await supabase
+    let { data: row, error } = await supabase
       .from('applications')
-      .insert({ ...summary, user_id: user.id, status: 'extracted' })
+      .insert({ ...withCapture, user_id: user.id, status: 'extracted' })
       .select('id')
       .single();
+    if (isMissingColumn(error)) {
+      console.warn('[Extraction] raw capture columns missing — run migration 0011.');
+      ({ data: row, error } = await supabase
+        .from('applications')
+        .insert({ ...summary, user_id: user.id, status: 'extracted' })
+        .select('id')
+        .single());
+    }
     if (error) throw error;
-    return row.id as string;
+    return row!.id as string;
   } catch (e) {
     // Never block the agent's workflow on a storage failure.
     console.error('[Extraction] save failed:', e);

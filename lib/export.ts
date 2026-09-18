@@ -4,6 +4,7 @@ import type { SavedApplication } from '@/lib/applications';
 // Every form field, in schema order. Derived from the Zod shape so a new field
 // added to lib/types.ts shows up in the export automatically.
 export const FORM_FIELDS = Object.keys(ApplicationFormDataSchema.shape) as string[];
+const FORM_FIELD_SET = new Set(FORM_FIELDS);
 
 // Row metadata that isn't part of the form itself.
 const META_COLUMNS = [
@@ -15,6 +16,11 @@ const META_COLUMNS = [
   'agent_staff_id',
   'application_id',
   'pdf_path',
+  // Raw capture (migration 0011). Kept at the end so the familiar columns stay
+  // where people expect them. `extracted_extra` carries only what extraction
+  // found and the current form has no field for — the reason to keep it at all.
+  'extracted_extra',
+  'raw_text',
 ] as const;
 
 export const EXPORT_COLUMNS = [...META_COLUMNS, ...FORM_FIELDS];
@@ -96,6 +102,15 @@ export function applicationsToCsv(
           return row.id;
         case 'pdf_path':
           return row.pdf_path ?? '';
+        case 'raw_text':
+          return row.raw_text ?? '';
+        case 'extracted_extra': {
+          const extracted = (row.extracted_data ?? {}) as Record<string, unknown>;
+          const extra = Object.fromEntries(
+            Object.entries(extracted).filter(([k, v]) => v != null && v !== '' && !FORM_FIELD_SET.has(k))
+          );
+          return Object.keys(extra).length ? JSON.stringify(extra) : '';
+        }
         default:
           return cell(col, data[col]);
       }

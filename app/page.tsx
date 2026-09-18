@@ -174,6 +174,9 @@ export default function Dashboard() {
           salutation: result.data.salutation || (result.data.name?.includes('Binti') ? 'Ms' : result.data.name?.includes('Bin') ? 'Mr' : undefined),
           name_as_per_ic: result.data.name,
           mykad_number: result.data.ic_number,
+          // Non-Malaysian applicants: the OCBC template has a passport field
+          // (pdf-ocbc.ts) and this used to arrive extracted and then be dropped.
+          passport_number: result.data.passport_number,
           hp_number: result.data.phone,
           email_address: result.data.email,
           residential_address: result.data.address,
@@ -292,7 +295,13 @@ export default function Dashboard() {
         // Persist immediately so the admin has the record even if this
         // application is never turned into a PDF. Re-extracting reuses the
         // same draft row rather than creating a new one.
-        const savedDraft = await saveExtraction(mappedData, draftId);
+        // Store the pasted message and the FULL extraction alongside the form
+        // blob — extraction finds fields this form has nowhere to put (passport
+        // number, nature of business), and a future form may need them.
+        const savedDraft = await saveExtraction(mappedData, draftId, {
+          rawText,
+          extracted: result.data,
+        });
         setDraftId(savedDraft);
         logEvent('extract', savedDraft ?? undefined); // track extraction usage
         console.log('📝 Form data updated:', mappedData);
@@ -906,12 +915,23 @@ function FormFields({
               onChange={(e) => updateField('nationality', e.target.value)}
             />
           </div>
-          <div className="col-span-2 space-y-2">
+          <div className="col-span-1 space-y-2">
             <Label htmlFor="mykad_number">MyKad Number (without -)</Label>
             <Input
               id="mykad_number"
               value={formData.mykad_number || ''}
               onChange={(e) => updateField('mykad_number', e.target.value)}
+              placeholder=""
+            />
+          </div>
+          {/* Non-Malaysian applicants. Extraction has always found this, and the
+              OCBC template prints it — it just had nowhere to land until now. */}
+          <div className="col-span-1 space-y-2">
+            <Label htmlFor="passport_number">Passport No. (non-Malaysian)</Label>
+            <Input
+              id="passport_number"
+              value={formData.passport_number || ''}
+              onChange={(e) => updateField('passport_number', e.target.value)}
               placeholder=""
             />
           </div>
