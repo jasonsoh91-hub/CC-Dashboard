@@ -51,18 +51,23 @@ Rules:
 
       const userPrompt = this.buildExtractionPrompt(rawData);
 
-      const response = await this.callGLM(systemPrompt, userPrompt);
+      const { text: response, provider, failures } = await this.callModel(systemPrompt, userPrompt);
 
       const extractedData = this.extractJson<ExtractedData>(response);
       if (extractedData) {
         const cleaned = this.cleanData(extractedData, rawData);
         const { data: verified, warnings: verifyWarnings } =
           this.verifyAgainstSource(cleaned, rawData);
+        // A non-empty `failures` list means the primary provider is down and a
+        // backup answered — still a good result, but worth flagging.
+        const providerWarnings = failures.length > 0
+          ? [`Primary AI provider unavailable, extracted with ${provider} instead (${failures.join('; ')})`]
+          : [];
         return {
           success: true,
           data: verified,
           confidence: this.calculateConfidence(verified),
-          warnings: [...this.generateWarnings(verified), ...verifyWarnings],
+          warnings: [...providerWarnings, ...this.generateWarnings(verified), ...verifyWarnings],
         };
       }
 
@@ -273,8 +278,11 @@ CRITICAL mappings for Malaysian forms:
       // Raw enum-ish attributes — the API route normalises these to app enums.
       salutation: clean(data.salutation),
       marital_status: clean(data.marital_status),
-      race: clean(data.race),
-      religion: clean(data.religion),
+      // Race/religion are normalised here rather than only at PDF time: the form
+      // dropdowns render blank for a raw value like "CHINESE"/"BUDDHA", which
+      // reads to the agent as "not captured".
+      race: this.normalizeRaceValue(clean(data.race) ?? ''),
+      religion: this.normalizeReligionValue(clean(data.religion) ?? ''),
       employment_type: clean(data.employment_type),
       employment_status: clean(data.employment_status),
       business_classification: this.resolveBusinessClass(
@@ -585,7 +593,7 @@ CRITICAL mappings for Malaysian forms:
       success: true,
       data,
       confidence: 50,
-      warnings: ['Used fallback extraction - some fields may be incomplete'],
+      warnings: ['AI extraction unavailable — used the basic text parser. Check every field manually before generating the PDF.'],
     };
   }
 
@@ -611,6 +619,10 @@ CRITICAL mappings for Malaysian forms:
       emergency_name: null,
       emergency_phone: null,
       emergency_relation: null,
+      race: null,
+      religion: null,
+      monthly_income: null,
+      monthly_commitment: null,
     };
 
     const lines = rawText
@@ -619,6 +631,9 @@ CRITICAL mappings for Malaysian forms:
       .filter(l => l);
 
     let currentSection: 'emergency' | 'employer' | null = null;
+    // The generic "…address:" rule is greedy, so remember when the residential
+    // address came from an explicit label and let that value win.
+    let addressIsLabelled = false;
 
     for (const line of lines) {
       const lowerLine = line.toLowerCase();
@@ -628,7 +643,7 @@ CRITICAL mappings for Malaysian forms:
         currentSection = 'emergency';
       } else if (/^(company|employer|comp\s*address|nature\s*business|position|office)/i.test(lowerLine)) {
         currentSection = 'employer';
-      } else if (/^(name|ic|residen|mother|education|email|hp|mobile)/i.test(lowerLine)) {
+      } else if (/^(name|ic|residen|mother|education|email|hp|mobile|phone|race|religion|bangsa|agama)/i.test(lowerLine)) {
         currentSection = null;
       }
 
@@ -649,9 +664,9 @@ CRITICAL mappings for Malaysian forms:
         if (m) data.passport_number = m[1].toUpperCase();
       }
 
-      // Phone numbers - ONLY from HP/Mobile/Tel fields, NOT emergency
-      if ((/^hp\s*[:=]|mobile\s*[:=]|tel\s*[:=]|telephone\s*[:=]/i.test(line) ||
-          (/hp\s*no|mobile\s*no|tel\s*no/i.test(lowerLine) && !/emergency/i.test(lowerLine))) &&
+      // Phone numbers - ONLY from HP/Mobile/Tel/Phone fields, NOT emergency
+      if ((/^(hp|h\/p|mobile|tel|telephone|phone)\s*(no|number)?\s*[:=]/i.test(line) ||
+          (/(hp|mobile|tel|phone)\s*(no|number)/i.test(lowerLine) && !/emergency|office|house/i.test(lowerLine))) &&
           currentSection !== 'emergency' && !data.phone) {
         data.phone = this.extractPhone(line);
       }
@@ -692,8 +707,15 @@ CRITICAL mappings for Malaysian forms:
         data.email = emailMatch[1];
       }
 
-      // Address
-      if (/address\s*[:=]/i.test(lowerLine) && !data.address) {
+      // Residential address. An explicit "Residential Address:" always wins;
+      // a bare "Address:" is only accepted when nothing else claimed the line
+      // (notably "Email Address:", which used to swallow the applicant's email
+      // into this field and leave the real address blank).
+      const isOtherAddressLabel = /e-?mail|hr|work|office|company|employer|comp\s|correspondence|mailing/i.test(lowerLine);
+      if (/(residential|residental|residence|home|house)\s*address\s*[:=]/i.test(lowerLine)) {
+        data.address = this.extractAfterColon(line);
+        addressIsLabelled = true;
+      } else if (/address\s*[:=]/i.test(lowerLine) && !isOtherAddressLabel && !addressIsLabelled && !data.address) {
         data.address = this.extractAfterColon(line);
       }
 
@@ -702,14 +724,31 @@ CRITICAL mappings for Malaysian forms:
         data.employer_name = this.extractAfterColon(line);
       }
 
-      // Employer/Company address
-      if (/comp\s*address|company\s*address|employer\s*address|address\s*employer/i.test(lowerLine) && !data.employer_address) {
+      // Employer/Company/Office address
+      if (/comp\s*address|company\s*address|employer\s*address|address\s*employer|office\s*address|work\s*address/i.test(lowerLine) && !data.employer_address) {
         data.employer_address = this.extractAfterColon(line);
       }
 
-      // Mother name
-      if (/mother\s*full?\s*name/i.test(lowerLine) && !data.mother_name) {
+      // Mother name — "Mother Full Name", "Mother's Name", "Nama Ibu"
+      if (/mother'?s?\s*(full\s*)?name|nama\s*ibu/i.test(lowerLine) && !data.mother_name) {
         data.mother_name = this.extractAfterColon(line);
+      }
+
+      // Race / religion (the LLM path normalises these; do the same here so the
+      // dropdowns receive a valid enum rather than raw "CHINESE" / "BUDDHA").
+      if (/^(race|bangsa)\s*[:=]/i.test(lowerLine) && !data.race) {
+        data.race = this.normalizeRaceValue(this.extractAfterColon(line));
+      }
+      if (/^(religion|agama)\s*[:=]/i.test(lowerLine) && !data.religion) {
+        data.religion = this.normalizeReligionValue(this.extractAfterColon(line));
+      }
+
+      // Income / commitment — digits only, matching the LLM prompt's contract.
+      if (/monthly\s*income|basic\s*(salary|income)|^salary\s*[:=]|gaji/i.test(lowerLine) && !data.monthly_income) {
+        data.monthly_income = this.extractAmount(line);
+      }
+      if (/monthly\s*commitment|commitment|komitmen/i.test(lowerLine) && !data.monthly_commitment) {
+        data.monthly_commitment = this.extractAmount(line);
       }
 
       // Position
@@ -762,6 +801,33 @@ CRITICAL mappings for Malaysian forms:
       return colonMatch[1].trim();
     }
     return '';
+  }
+
+  /** Amount from a labelled line, reusing the LLM path's "8k"/"RM12,000" rules. */
+  private extractAmount(line: string): string | null {
+    return this.parseAmount(this.extractAfterColon(line) || null);
+  }
+
+  private normalizeRaceValue(raw: string): string | null {
+    const v = raw.trim().toLowerCase();
+    if (!v) return null;
+    if (/melayu|malay|bumi/.test(v)) return 'Malay';
+    if (/cina|chinese|chinise/.test(v)) return 'Chinese';
+    if (/punjabi|sikh/.test(v)) return 'Punjabi';
+    if (/india|indian|indien|tamil/.test(v)) return 'Indian';
+    return 'Others';
+  }
+
+  private normalizeReligionValue(raw: string): string | null {
+    const v = raw.trim().toLowerCase();
+    if (!v) return null;
+    if (/islam|muslim/.test(v)) return 'Islam';
+    if (/christ|kristian|catholic|protestant/.test(v)) return 'Christian';
+    if (/buddh|budha/.test(v)) return 'Buddhist';
+    if (/hindu/.test(v)) return 'Hindu';
+    if (/sikh/.test(v)) return 'Sikhism';
+    if (/atheis|none|no religion|free\s*thinker/.test(v)) return 'Atheist';
+    return 'Others';
   }
 
   private extractPhone(line: string): string {

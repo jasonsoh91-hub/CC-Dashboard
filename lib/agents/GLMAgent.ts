@@ -1,4 +1,5 @@
-import { GLMClient, GLMMessage, GLMModels } from './GLMBaseAgent';
+import { GLMClient, GLMModels } from './GLMBaseAgent';
+import { callLLM, LLMResult } from './llm';
 
 export abstract class GLMAgent {
   protected client: GLMClient;
@@ -9,29 +10,18 @@ export abstract class GLMAgent {
     this.modelName = modelName;
   }
 
-  protected async callGLM(
+  /**
+   * Calls the LLM through the provider chain (Gemini first, GLM fallback).
+   * Returns which provider answered so the caller can warn when the primary
+   * one is down instead of silently degrading.
+   */
+  protected async callModel(
     systemPrompt: string,
     userMessage: string,
     maxTokens = 4096
-  ): Promise<string> {
+  ): Promise<LLMResult> {
     try {
-      const messages: GLMMessage[] = [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage },
-      ];
-
-      const response = await this.client.chat({
-        messages,
-        model: this.modelName,
-        temperature: 0.3, // Lower temperature for more consistent extraction
-        maxTokens,
-      });
-
-      if (response.choices && response.choices.length > 0) {
-        return response.choices[0].message.content;
-      }
-
-      throw new Error('No response from GLM');
+      return await callLLM(systemPrompt, userMessage, maxTokens);
     } catch (error) {
       console.error(`${this.constructor.name} error:`, error);
       throw error;

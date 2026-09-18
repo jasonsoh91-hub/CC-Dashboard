@@ -99,6 +99,9 @@ export default function Dashboard() {
   const [lastSavedId, setLastSavedId] = useState<string | null>(null);
   // Row written at extraction time; promoted to 'generated' when the PDF is made.
   const [draftId, setDraftId] = useState<string | null>(null);
+  // Surfaced so a degraded extraction (AI provider down → regex parser) is
+  // visible to the agent instead of silently producing a half-empty form.
+  const [extractionWarnings, setExtractionWarnings] = useState<string[]>([]);
 
   // The nav bar owns the balance chip and the reminder watches the same event,
   // so a charge here only needs to tell them to re-read.
@@ -156,6 +159,7 @@ export default function Dashboard() {
 
       const result = await response.json();
       console.log('📥 API Response:', result);
+      setExtractionWarnings(result?.meta?.extractionWarnings ?? []);
       if (result.success && result.data) {
         console.log('✅ Extraction successful!');
         console.log('📊 Extracted data:', result.data);
@@ -299,6 +303,7 @@ export default function Dashboard() {
       }
     } catch (error) {
       console.error('Extraction error:', error);
+      setExtractionWarnings(['Extraction failed to run. Fill the form manually, or try again.']);
     } finally {
       setIsLoading(false);
     }
@@ -732,6 +737,16 @@ Hp number : 0173896769
               </CardDescription>
             </CardHeader>
             <CardContent className="max-h-[700px] overflow-y-auto">
+              {extractionWarnings.length > 0 && (
+                <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                  <p className="font-medium">Check these fields before generating</p>
+                  <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                    {extractionWarnings.map((w, i) => (
+                      <li key={i}>{w}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {extractedData ? (
                 <FormFields
                   formData={formData}
