@@ -22,11 +22,14 @@ export interface LLMResult {
  * Tried in order. Two reasons this is a list and not one name:
  *  - gemini-2.5-flash 404s for keys from newly created Google projects
  *    ("no longer available to new users"), so the default must stay current.
+ *    Both 2.5 models were dropped on 2026-10-11 after they started 404ing on
+ *    the live key; verify a replacement by calling it, not by listModels —
+ *    models.get still returns a retired model with generateContent listed.
  *  - the free tier's 20-requests/day cap is **per model**, so rolling to the
  *    next model buys another 20 instead of dropping to the regex parser.
  * Override with GEMINI_MODEL (comma-separated) if Google moves again.
  */
-const GEMINI_MODELS = (process.env.GEMINI_MODEL || 'gemini-3.6-flash,gemini-3.1-flash-lite,gemini-2.5-flash-lite,gemini-2.5-flash')
+const GEMINI_MODELS = (process.env.GEMINI_MODEL || 'gemini-3.6-flash,gemini-3.8-flash,gemini-3.1-flash-lite,gemini-3.5-flash-lite')
   .split(',')
   .map(m => m.trim())
   .filter(Boolean);
@@ -71,8 +74,11 @@ async function callGeminiModel(
   if (!response.ok) {
     const errorText = await response.text();
     // Not every model accepts thinkingConfig; drop it and retry once rather
-    // than burning the model slot on a 400.
-    if (response.status === 400 && withThinkingConfig && /thinking/i.test(errorText)) {
+    // than burning the model slot on a 400. The message is NOT reliable —
+    // gemini-3.5-flash-lite rejects thinkingConfig with a bare "Request
+    // contains an invalid argument", so any 400 on a thinking request is
+    // retried without it. If it 400s again, the error is real and propagates.
+    if (response.status === 400 && withThinkingConfig) {
       console.warn(`[llm] ${model} rejected thinkingConfig, retrying without it`);
       return callGeminiModel(apiKey, model, systemPrompt, userMessage, maxTokens, false);
     }

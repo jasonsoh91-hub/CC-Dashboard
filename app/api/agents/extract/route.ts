@@ -1,8 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getGLMOrchestrator } from '@/lib/agents/GLMAgentOrchestrator';
+import { createClient } from '@/lib/supabase/server';
 
 export async function POST(request: NextRequest) {
   try {
+    // middleware.ts deliberately skips /api, so every API route must check auth
+    // itself. Without this the endpoint is anonymously callable in production
+    // and anyone can spend the Gemini quota.
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: 'unauthenticated' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { raw_text } = body;
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { extractDataFromN8n } from '@/lib/n8n';
 import { SmartExtractionAgent } from '@/lib/agents/SmartExtractionAgent';
+import { createClient } from '@/lib/supabase/server';
 
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || '';
 
@@ -9,6 +10,16 @@ console.log('[extract API] GOOGLE_API_KEY length:', GOOGLE_API_KEY.length);
 
 export async function POST(request: NextRequest) {
   try {
+    // Same reason as /api/agents/extract: middleware skips /api, and this
+    // legacy route also spends the Gemini key.
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: 'unauthenticated' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { raw_text } = body;
 
