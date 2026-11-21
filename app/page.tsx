@@ -13,48 +13,13 @@ import type { ExtractedData, ApplicationFormData } from '@/lib/types';
 import { dropdownOptions } from '@/lib/types';
 import { BANKS, getCardsByBank } from '@/lib/banks';
 import { logEvent, saveExtraction, submitFeedback } from '@/lib/applications';
+import { nameOnCard } from '@/lib/name-on-card';
 import { BALANCE_CHANGED_EVENT, CREDIT_FLOOR, SUPPORT_WHATSAPP } from '@/lib/support';
 
 // Helper: Generate name for card (max 19 characters, smart truncate)
 // Always removes "BINTI"/"BIN" connectors for cleaner card names
 function generateNameOnCard(fullName: string | undefined | null): string {
-  if (!fullName) return '';
-
-  const MAX_CHARS = 19;
-  const cleanName = fullName.replace(/\s+/g, ' ').trim().toUpperCase();
-
-  // For Malay names: extract First Name + Last Name (skipping "BINTI"/"BIN")
-  const parts = cleanName.split(' ');
-  const firstName = parts[0];
-
-  // Build name without connector
-  let partsWithoutConnector: string[] = [];
-  for (let i = 0; i < parts.length; i++) {
-    if (parts[i] === 'BINTI' || parts[i] === 'BIN') {
-      continue; // Skip connector
-    }
-    partsWithoutConnector.push(parts[i]);
-  }
-
-  let cardName = partsWithoutConnector.join(' ');
-
-  // If still too long, try First Name + Last Word only
-  if (cardName.length > MAX_CHARS && partsWithoutConnector.length > 1) {
-    const lastWord = partsWithoutConnector[partsWithoutConnector.length - 1];
-    const shortName = `${firstName} ${lastWord}`;
-    if (shortName.length <= MAX_CHARS) {
-      cardName = shortName;
-    } else {
-      cardName = firstName;
-    }
-  }
-
-  // First name too long? Truncate
-  if (cardName.length > MAX_CHARS) {
-    cardName = firstName.substring(0, MAX_CHARS);
-  }
-
-  return cardName;
+  return nameOnCard(fullName);
 }
 
 // Helper: Check if address is in Singapore
@@ -171,6 +136,8 @@ export default function Dashboard() {
         // Map extracted data to form fields
         const mappedData: ApplicationFormData = {
           card_type: formData.card_type,
+          application_type: formData.application_type,
+          balance_transfer: formData.balance_transfer,
           salutation: result.data.salutation || (result.data.name?.includes('Binti') ? 'Ms' : result.data.name?.includes('Bin') ? 'Mr' : undefined),
           name_as_per_ic: result.data.name,
           mykad_number: result.data.ic_number,
@@ -230,6 +197,9 @@ export default function Dashboard() {
           const day = result.data.ic_number.substring(4, 6);
           const fullYear = year > 30 ? `19${year}` : `20${year}`;
           mappedData.date_of_birth = `${day}/${month}/${fullYear}`;
+        } else if ((result.data as { date_of_birth?: string | null }).date_of_birth) {
+          // No usable MyKad (e.g. passport holder): use a DOB written in the message.
+          mappedData.date_of_birth = (result.data as { date_of_birth?: string | null }).date_of_birth ?? undefined;
         }
 
         // Gender from MyKad (last digit: odd=male, even=female) — authoritative
@@ -849,6 +819,42 @@ function FormFields({
             ))}
           </SelectContent>
         </Select>
+        {formData.bank_id !== 'ocbc' && (
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="application_type">Application Type</Label>
+              <Select
+                value={formData.application_type || 'new'}
+                onValueChange={(v) => v != null && updateField('application_type', v)}
+              >
+                <SelectTrigger id="application_type">
+                  <SelectValue placeholder="" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="new">New Card</SelectItem>
+                  <SelectItem value="add">Add Card</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {formData.card_type === 'Awwal Basic Card-i' && formData.application_type === 'add' && (
+              <div className="space-y-2">
+                <Label htmlFor="balance_transfer">Balance Transfer (one-time)</Label>
+                <Select
+                  value={formData.balance_transfer == null ? '' : formData.balance_transfer ? 'yes' : 'no'}
+                  onValueChange={(v) => v != null && updateField('balance_transfer', v === 'yes')}
+                >
+                  <SelectTrigger id="balance_transfer">
+                    <SelectValue placeholder="" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="yes">Yes</SelectItem>
+                    <SelectItem value="no">No</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <Separator />

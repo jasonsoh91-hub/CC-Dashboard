@@ -79,6 +79,7 @@ const allCardTypes = [
   'Muamalat Pos Visa Platinum-i',
   'Muamalat Pos Visa Infinite-i',
   'Muamalat AmanahRaya Visa Platinum-i',
+  'Awwal Basic Card-i',
   // OCBC
   '90°N Visa Card',
   'Cashflo Mastercard',
@@ -117,6 +118,10 @@ export const ApplicationFormDataSchema = ExtractedDataSchema.extend({
   // Bank and Card Selection
   bank_id: z.enum(bankIds).optional().nullable(),
   card_type: z.enum(allCardTypes).optional().nullable(),
+  // Oct 2026 Muamalat form: New Card / Add Card, and a one-time balance
+  // transfer that only applies to Awwal Basic Card-i add-card applications.
+  application_type: z.enum(['new', 'add']).optional().nullable(),
+  balance_transfer: z.boolean().optional().nullable(),
 
   // Section A: Personal Details
   salutation: z.enum(['Dr', 'Haji', 'Hajjah', 'Mr', 'Mrs', 'Ms', 'Prof']).optional().nullable(),

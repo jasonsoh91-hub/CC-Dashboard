@@ -49,6 +49,7 @@ export interface ExtractedData {
   religion?: string | null;
   employment_type?: string | null;
   employment_status?: string | null;
+  date_of_birth?: string | null;
 }
 
 export interface ValidationResult {

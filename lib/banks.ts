@@ -13,6 +13,7 @@ export const BANKS = {
       'Muamalat Pos Visa Platinum-i',
       'Muamalat Pos Visa Infinite-i',
       'Muamalat AmanahRaya Visa Platinum-i',
+      'Awwal Basic Card-i',
     ] as const,
   },
   ocbc: {

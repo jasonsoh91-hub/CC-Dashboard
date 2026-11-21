@@ -104,7 +104,8 @@ Return this exact JSON structure:
   "employer_name": "company name from 'Company name:', 'Employer:'",
   "employer_address": "office address",
   "position": "job position from 'Position:' - expand abbreviations (MD=Managing Director, GM=General Manager)",
-  "occupation": "occupation type (Business, Engineer, Doctor, etc.)",
+  "occupation": "the APPLICANT'S OWN profession / job category (e.g. Engineer, Doctor, Teacher, Nurse, Accountant, Clerk, Technician, Driver, Executive, Manager, Consultant). This is what the PERSON does, NOT what the employer's company does — a Petronas or Maybank employee is NOT 'Business'. Use 'Business Owner' ONLY when the applicant runs/owns their own business. Null if unclear.",
+  "date_of_birth": "applicant's date of birth ONLY if explicitly written (e.g. 'DOB 4 Feb 1987', 'lahir 12/3/1990'), formatted DD/MM/YYYY. Do NOT derive it from the IC number. Null if not written.",
   "office_phone": "office phone from 'Office Number:', 'Office:', 'Office Tel:' - digits only",
   "work_since": "length of service from 'Length in Service:', 'Since:', 'Date joined:' - EXTRACT the raw date value (e.g., 'June 2024', 'January 2023'). The system will automatically convert this to years/months format.",
   "work_email": "work/HR email from 'HR Email:', 'Work Email:' - this is SEPARATE from personal email",
@@ -122,7 +123,7 @@ Return this exact JSON structure:
   "race": "race/ethnicity if EXPLICITLY stated — one of: Malay, Chinese, Indian, Punjabi, Others. Map BM: 'Melayu'→Malay, 'Cina'→Chinese, 'India'→Indian. Null if not stated (do NOT guess from name here).",
   "religion": "religion if EXPLICITLY stated — one of: Islam, Christian, Buddhist, Hindu, Sikhism, Atheist, Others. Map 'Muslim'→Islam. Null if not stated.",
   "employment_type": "employment type — one of: Employer, Government Employee, Private Employee, Self Employed. Infer: government/civil servant/kerajaan→Government Employee; private company employee/swasta→Private Employee; business owner/self-employed/'bisnes sendiri'/'buat sendiri'/freelance→Self Employed; hires staff/'majikan'→Employer. Null if unclear.",
-  "employment_status": "employment status — one of: Permanent, Contract, Pensioner, Part Timer, Others. Map: 'tetap'/'confirmed'/'full time'→Permanent, 'kontrak'→Contract, 'pesara'/'retired'→Pensioner, 'sambilan'/'part time'→Part Timer. Null if not stated.",
+  "employment_status": "employment status — one of: Permanent, Contract, Pensioner, Part Timer, Others. Map: 'tetap'/'confirmed'/'full time'→Permanent, 'kontrak'→Contract, 'pesara'/'retired'→Pensioner, 'sambilan'/'part time'→Part Timer. If the applicant is a salaried employee and nothing suggests contract/part-time/retired, use Permanent. Null if self-employed or unclear.",
   "business_classification": "company legal type if inferable from employer name suffix or stated — one of: Private Limited, Limited, Partnership, Public Listed, Multinational Corporation, Government, Sole Proprietorship, Others. Map: 'Sdn Bhd'→Private Limited, 'Bhd'(alone)→Limited, 'PLC'/'public listed'→Public Listed, 'Enterprise'/'Trading'/'sole proprietor'→Sole Proprietorship, government dept→Government. IMPORTANT: if the person is self-employed / runs their own small business ('bisnes sendiri', 'buat sendiri', freelance) AND there is NO 'Sdn Bhd' or 'Bhd' in the employer name, use 'Sole Proprietorship'. Do NOT default to 'Private Limited' unless 'Sdn Bhd' is present. Null if unknown."
 }
 
@@ -260,7 +261,8 @@ CRITICAL mappings for Malaysian forms:
       employer_name: clean(data.employer_name),
       employer_address: clean(data.employer_address),
       position: clean(data.position),
-      occupation: clean(data.occupation),
+      occupation: this.resolveOccupation(clean(data.occupation), clean(data.employment_type), clean(data.position)),
+      date_of_birth: this.normalizeDob(clean((data as { date_of_birth?: string | null }).date_of_birth), rawData),
       office_phone: normalizePhone(data.office_phone, 'landline', officeCountry),
       work_since: this.formatWorkSince(clean(data.work_since)),
       work_email: clean(data.work_email),
@@ -284,13 +286,64 @@ CRITICAL mappings for Malaysian forms:
       race: this.normalizeRaceValue(clean(data.race) ?? ''),
       religion: this.normalizeReligionValue(clean(data.religion) ?? ''),
       employment_type: clean(data.employment_type),
-      employment_status: clean(data.employment_status),
+      employment_status: this.resolveEmploymentStatus(clean(data.employment_status), clean(data.employment_type), rawData),
       business_classification: this.resolveBusinessClass(
         clean(data.business_classification),
         clean(data.employment_type),
         clean(data.employer_name),
       ),
     };
+  }
+
+  // The LLM tends to answer "Business" for anyone who works at a company.
+  // "Business"/"Business Owner" only makes sense for the self-employed; for a
+  // salaried employee fall back to the position (e.g. "Senior Executive").
+  private resolveOccupation(occ: string | null, empType: string | null, position: string | null): string | null {
+    if (!occ) return occ;
+    const isBizWord = /^(business(\s*owner)?|businessman|bisnes|peniaga|usahawan|entrepreneur)$/i.test(occ.trim());
+    if (!isBizWord) return occ;
+    const t = (empType || '').toLowerCase();
+    const employee = /government|private|employee|kerajaan|swasta/.test(t);
+    if (employee) return position || null;
+    return /self|employer/.test(t) ? 'Business Owner' : occ;
+  }
+
+  // Employment status is rarely written. Explicit contract / part-time /
+  // retired wins; a salaried employee otherwise defaults to Permanent (agents
+  // can change it); self-employed stays empty.
+  private resolveEmploymentStatus(status: string | null, empType: string | null, raw: string): string | null {
+    const text = raw.toLowerCase();
+    if (/\b(kontrak|contract)\b/.test(text)) return 'Contract';
+    if (/\b(part[\s-]?time|sambilan)\b/.test(text)) return 'Part Timer';
+    if (/\b(pesara|pensioner)\b/.test(text)) return 'Pensioner';
+    if (status) return status;
+    const t = (empType || '').toLowerCase();
+    if (/government|private|employee|kerajaan|swasta/.test(t)) return 'Permanent';
+    return null;
+  }
+
+  // Accepts "4 Feb 1987", "1987-02-04", "4/2/87" → "04/02/1987".
+  private normalizeDob(v: string | null, raw = ''): string | null {
+    const out = this.parseDob(v);
+    if (!out) return null;
+    // Guard against the model inventing a DOB: the year must be in the message.
+    const year = out.slice(-4);
+    if (raw && !raw.includes(year) && !new RegExp(`[/\\-. ]${year.slice(2)}\\b`).test(raw)) return null;
+    return out;
+  }
+
+  private parseDob(v: string | null): string | null {
+    if (!v) return null;
+    const s = v.trim();
+    const months: Record<string, string> = { jan: '01', feb: '02', mar: '03', apr: '04', may: '05', mei: '05', jun: '06', jul: '07', aug: '08', ogo: '08', sep: '09', oct: '10', okt: '10', nov: '11', dec: '12', dis: '12' };
+    const yy = (y: string) => (y.length === 2 ? (Number(y) > 30 ? '19' : '20') + y : y);
+    let m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+    if (m) return `${m[3].padStart(2, '0')}/${m[2].padStart(2, '0')}/${m[1]}`;
+    m = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/);
+    if (m) return `${m[1].padStart(2, '0')}/${m[2].padStart(2, '0')}/${yy(m[3])}`;
+    m = s.match(/^(\d{1,2})\s*([a-z]{3})[a-z]*\.?\s*(\d{2,4})$/i);
+    if (m && months[m[2].toLowerCase()]) return `${m[1].padStart(2, '0')}/${months[m[2].toLowerCase()]}/${yy(m[3])}`;
+    return null;
   }
 
   // Deterministic correction for the LLM's habit of defaulting company type to
@@ -324,7 +377,9 @@ CRITICAL mappings for Malaysian forms:
     if (unit === 'k' || unit === 'ribu' || unit === 'rb') n *= 1_000;
     else if (unit === 'juta' || unit === 'jt' || unit === 'mil' || unit === 'm') n *= 1_000_000;
     if (n <= 0 || n > 100_000_000) return null; // sanity bounds
-    return String(Math.round(n));
+    // Keep sen when written ("18,750.60" stays 18750.60, not 18751).
+    const r = Math.round(n * 100) / 100;
+    return Number.isInteger(r) ? String(r) : r.toFixed(2);
   }
 
   private normalizeResidenceStatus(raw: string | null): string | null {

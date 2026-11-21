@@ -2,7 +2,7 @@ import { PDFDocument, PDFForm, PDFTextField, PDFCheckBox } from 'pdf-lib';
 import { ApplicationFormData } from './types';
 import { getTemplateByBank } from './banks';
 import { fillOCBCFormWithFields } from './pdf-ocbc';
-import { fillBankMuamalatV3Form } from './pdf-muamalat-v3';
+import { fillBankMuamalatOct2026Form } from './pdf-muamalat-oct2026';
 import fs from 'fs';
 import path from 'path';
 
@@ -30,10 +30,12 @@ export async function fillPdfForm(data: ApplicationFormData): Promise<Uint8Array
     return await fillOCBCFormWithFields(pdfBytes, data);
   }
 
-  // Default to Bank Muamalat — v3 (May 2026) template.
-  // Legacy fillBankMuamalatForm() below targets the old template field names
-  // and is kept only for rollback (swap the template file + this call back).
-  return await fillBankMuamalatV3Form(pdfBytes, data);
+  // Default to Bank Muamalat — Oct 2026 form. The bank sent it flat; our
+  // fillable copy is built by scripts/templates/build-muamalat-oct2026-editable.mjs.
+  // Rollback to the May 2026 v3 form: restore the template file
+  // "muamalat application form (v3 May2026 legacy).pdf" and call
+  // fillBankMuamalatV3Form from './pdf-muamalat-v3' here instead.
+  return await fillBankMuamalatOct2026Form(pdfBytes, data);
 }
 
 // OCBC form filling
