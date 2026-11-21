@@ -118,6 +118,7 @@ const isMalaysian = (v: unknown) => {
 export async function fillBankMuamalatOct2026Form(
   pdfBytes: Buffer | Uint8Array,
   data: ApplicationFormData,
+  opts: { flatten?: boolean } = {},
 ): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.load(pdfBytes, { updateMetadata: false });
   const form = pdfDoc.getForm();
@@ -135,6 +136,34 @@ export async function fillBankMuamalatOct2026Form(
     } catch {
       console.warn(`[PDF-oct2026] text field missing: ${name}`);
     }
+  };
+  // Signature name: two single-line boxes (<base>_top after "Name / Nama :", <base> below).
+  // Whole name goes on the lower line if it fits at a readable size; otherwise the first
+  // words fill the top box and the rest go below.
+  const signName = (base: string, value: unknown) => {
+    const v = clean(value);
+    if (!v) return;
+    let lowerW = 105, topW = 48;
+    try {
+      lowerW = (form.getField(base) as PDFTextField).acroField.getWidgets()[0].getRectangle().width - 4;
+      topW = (form.getField(`${base}_top`) as PDFTextField).acroField.getWidgets()[0].getRectangle().width - 4;
+    } catch { /* fall back to defaults */ }
+    if (font.widthOfTextAtSize(v, 6.5) <= lowerW) { setText(base, v); return; }
+    // Largest size at which (top words, remaining words) both fit their boxes.
+    const all = v.split(' ');
+    let top = '', words = all;
+    for (let size = 7; size >= 4.5; size -= 0.25) {
+      let i = 0, t = '';
+      while (i < all.length - 1) {
+        const next = t ? `${t} ${all[i]}` : all[i];
+        if (font.widthOfTextAtSize(next, size) > topW) break;
+        t = next; i++;
+      }
+      top = t; words = all.slice(i);
+      if (font.widthOfTextAtSize(words.join(' '), size) <= lowerW) break;
+    }
+    setText(`${base}_top`, top);
+    setText(base, words.join(' '));
   };
   const check = (name: string, on = true) => {
     try {
@@ -285,7 +314,7 @@ export async function fillBankMuamalatOct2026Form(
     setText('supp_business_classification', d.supp_business_classification);
     setText('supp_employment_type', d.supp_employment_type);
     setText('supp_relation_to_principal', d.supp_relation_to_principal);
-    setText('supp_sign_name', d.supp_name);
+    signName('supp_sign_name', d.supp_name);
     setText('supp_sign_date', today);
   }
 
@@ -306,7 +335,7 @@ export async function fillBankMuamalatOct2026Form(
   if (d.fatca_decl_2 != null) check(d.fatca_decl_2 ? 'tax_resident_other_country_no' : 'tax_resident_other_country_yes');
   if (d.tax_fatca_decl) check('agree_tax_fatca');
   if (d.agree_declaration) check('pdpa_agree');
-  setText('principal_name', d.name_as_per_ic);
+  signName('principal_name', d.name_as_per_ic);
   setText('principal_date', today);
 
   // ---------------- for BMMB use only ----------------
@@ -328,13 +357,11 @@ export async function fillBankMuamalatOct2026Form(
     const w = rect.width - 4;
     let size = rect.height < 11.5 ? 7.5 : 9;
     while (size > 5 && font.widthOfTextAtSize(v, size) > w) size -= 0.5;
-    if (font.widthOfTextAtSize(v, size) > w && f.isMultiline()) {
-      // Two-line fields (signature names): fit across 2 lines instead.
-      size = Math.min(7, (rect.height - 2) / 2.3);
-      while (size > 4.5 && font.widthOfTextAtSize(v, size) > w * 2 * 0.95) size -= 0.25;
-    }
     f.setFontSize(size);
   }
   form.updateFieldAppearances(font);
+  // Bake the text in: an editable PDF gets redrawn by Preview/Acrobat with their own
+  // font, which pushes letters off the comb boxes and over neighbouring labels.
+  if (opts.flatten !== false) form.flatten();
   return new Uint8Array(await pdfDoc.save());
 }

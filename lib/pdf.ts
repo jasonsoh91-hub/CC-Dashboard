@@ -6,7 +6,7 @@ import { fillBankMuamalatOct2026Form } from './pdf-muamalat-oct2026';
 import fs from 'fs';
 import path from 'path';
 
-export async function fillPdfForm(data: ApplicationFormData): Promise<Uint8Array> {
+export async function fillPdfForm(data: ApplicationFormData, opts: { flatten?: boolean } = {}): Promise<Uint8Array> {
   console.log('[PDF] Starting generation with data keys:', Object.keys(data));
   console.log('[PDF] mykad_number:', data.mykad_number);
   console.log('[PDF] employer_name:', data.employer_name);
@@ -35,7 +35,7 @@ export async function fillPdfForm(data: ApplicationFormData): Promise<Uint8Array
   // Rollback to the May 2026 v3 form: restore the template file
   // "muamalat application form (v3 May2026 legacy).pdf" and call
   // fillBankMuamalatV3Form from './pdf-muamalat-v3' here instead.
-  return await fillBankMuamalatOct2026Form(pdfBytes, data);
+  return await fillBankMuamalatOct2026Form(pdfBytes, data, opts);
 }
 
 // OCBC form filling

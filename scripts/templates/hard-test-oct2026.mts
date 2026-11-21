@@ -200,8 +200,8 @@ for (const c of cases) {
     const { data, blanked } = sanitizeAndParse(n);
     if (blanked.length) row.notes.push('zod blanked: ' + blanked.join(','));
     Object.assign(data as any, { agent_name: 'TEST AGENT', agent_ic: '900101015555', agent_staff_id: 'A1999' });
-    const bytes = await fillPdfForm(data as any);
-    fs.writeFileSync(`${OUT}/hard-${c.id}.pdf`, bytes);
+    fs.writeFileSync(`${OUT}/hard-${c.id}.pdf`, await fillPdfForm(data as any)); // what the app ships (flattened)
+    const bytes = await fillPdfForm(data as any, { flatten: false }); // fields kept so we can read them back
 
     // read back
     const doc = await PDFDocument.load(bytes);
@@ -211,6 +211,8 @@ for (const c of cases) {
       if (f instanceof PDFTextField) { got[f.getName()] = f.getText() || ''; }
       else if (f instanceof PDFCheckBox) got[f.getName()] = f.isChecked();
     }
+    for (const b of ['principal_name', 'supp_sign_name']) // signature name is split over 2 boxes
+      got[b] = [got[`${b}_top`], got[b]].filter(Boolean).join(' ');
     for (const [k, v] of Object.entries(c.expect)) {
       const g = got[k];
       const ok = typeof v === 'boolean' ? g === v : String(g ?? '').toLowerCase() === String(v).toLowerCase();

@@ -135,10 +135,13 @@ c('tax_resident_other_country_no', 3, 451.9, 572.4);
 c('agree_tax_fatca', 3, 25.8, 488.6, 18);
 c('pdpa_agree', 3, 36.8, 354.8);
 c('pdpa_disagree', 3, 36.8, 335.4);
-t('principal_name', 3, 183, 189.5, 108, 13, { multi: true });
-t('principal_date', 3, 238, 181.5, 53, 11);
-t('supp_sign_name', 3, 466, 189.5, 110, 13, { multi: true });
-t('supp_sign_date', 3, 522, 181.5, 55, 11);
+// Signature name: line 1 right after "Name / Nama :", line 2 below it. Neither touches Date.
+t('principal_name_top', 3, 240, 202.5, 52, 9);
+t('principal_name', 3, 183, 192.5, 109, 9.5);
+t('principal_date', 3, 238, 181, 53, 10.5);
+t('supp_sign_name_top', 3, 525, 202.5, 53, 9);
+t('supp_sign_name', 3, 466, 192.5, 112, 9.5);
+t('supp_sign_date', 3, 522, 181, 55, 10.5);
 // For BMMB use only
 t('introduced_by', 3, 160, 131, 137, 12);
 t('introducer_ic', 3, 160, 117, 137, 12);
