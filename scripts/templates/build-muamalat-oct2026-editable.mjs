@@ -2,7 +2,7 @@
 // Positions: pages 2-3 identical to our v2 legacy template; page 1 Section A = v2 shifted down 66pt;
 // top block + BMMB-use block measured from the render (2px/pt).
 import { createRequire } from 'module';
-const require = createRequire('/Users/jason.soh/cc-agent-dashboard/package.json');
+const require = createRequire(import.meta.url);
 const { PDFDocument, StandardFonts, TextAlignment } = require('pdf-lib');
 import fs from 'fs';
 

@@ -1,14 +1,15 @@
 // Hard test: FAKE applicants through the production chain.
+// Run from repo root: npx tsx --tsconfig tsconfig.json scripts/templates/hard-test-oct2026.mts <outDir> [ids]
 // extraction (real Gemini) -> page.tsx-equivalent mapping -> normalizeApplicationEnums
 // -> route sanitizeAndParse (ApplicationFormDataSchema) -> lib/pdf.ts fillPdfForm (live template)
 import fs from 'fs';
-import { getGLMOrchestrator } from '/Users/jason.soh/cc-agent-dashboard/lib/agents/GLMAgentOrchestrator';
-import { normalizeApplicationEnums } from '/Users/jason.soh/cc-agent-dashboard/lib/normalize-enums';
-import { ApplicationFormDataSchema } from '/Users/jason.soh/cc-agent-dashboard/lib/types';
-import { fillPdfForm } from '/Users/jason.soh/cc-agent-dashboard/lib/pdf';
-import { nameOnCard } from '/Users/jason.soh/cc-agent-dashboard/lib/name-on-card';
+import { getGLMOrchestrator } from '../../lib/agents/GLMAgentOrchestrator';
+import { normalizeApplicationEnums } from '../../lib/normalize-enums';
+import { ApplicationFormDataSchema } from '../../lib/types';
+import { fillPdfForm } from '../../lib/pdf';
+import { nameOnCard } from '../../lib/name-on-card';
 import { createRequire } from 'module';
-const { PDFDocument, PDFTextField, PDFCheckBox, StandardFonts } = createRequire('/Users/jason.soh/cc-agent-dashboard/package.json')('pdf-lib');
+const { PDFDocument, PDFTextField, PDFCheckBox, StandardFonts } = createRequire(import.meta.url)('pdf-lib');
 
 const OUT = process.argv[2];
 const ONLY = process.argv[3];
